@@ -38,7 +38,12 @@ describe("address map", () => {
 
     expect(first.rects[0]?.x).toBeGreaterThan(file.gridX);
     expect(first.rects[0]?.width).toBeGreaterThan(0);
-    expect(hitTestAddressMap(layout, gapX, gapY)?.kind).toBe("unmapped");
+    const hit = hitTestAddressMap(layout, gapX, gapY);
+    expect(hit).toBeDefined();
+    if (!hit) throw new Error("Expected an address hit");
+    expect(hit.kind).toBe("unmapped");
+    expect(hit.bytesPerCell).toBe(file.bytesPerCell);
+    expect(hit.cellEnd - hit.cellStart).toBe(file.bytesPerCell);
   });
 
   it("wraps tensor fills across address rows", () => {

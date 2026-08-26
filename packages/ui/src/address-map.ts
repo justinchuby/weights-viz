@@ -50,6 +50,9 @@ export interface AddressMapLayout {
 export interface AddressHit {
   file: ParsedFile;
   address: bigint;
+  cellStart: bigint;
+  cellEnd: bigint;
+  bytesPerCell: bigint;
   start: bigint;
   end: bigint;
   kind: "metadata" | "tensor" | "filtered" | "unmapped";
@@ -136,6 +139,22 @@ export function hitTestAddressMap(
     BigInt(row) * fileLayout.bytesPerRow +
     scaledBigInt(fileLayout.bytesPerRow, fraction);
   if (address >= fileLayout.file.size) return undefined;
+  const column = Math.min(
+    fileLayout.columns - 1,
+    Math.max(0, Math.floor(fraction * fileLayout.columns))
+  );
+  const cellStart =
+    BigInt(row) * fileLayout.bytesPerRow +
+    BigInt(column) * fileLayout.bytesPerCell;
+  const cellEnd = minBigInt(
+    fileLayout.file.size,
+    cellStart + fileLayout.bytesPerCell
+  );
+  const cell = {
+    cellStart,
+    cellEnd,
+    bytesPerCell: fileLayout.bytesPerCell
+  };
 
   const spanIndex = findSpanIndexAtOrBefore(fileLayout.spans, address);
   const span = spanIndex >= 0 ? fileLayout.spans[spanIndex] : undefined;
@@ -143,6 +162,7 @@ export function hitTestAddressMap(
     return {
       file: fileLayout.file,
       address,
+      ...cell,
       start: span.start,
       end: span.end,
       kind: span.visible ? "tensor" : "filtered",
@@ -154,6 +174,7 @@ export function hitTestAddressMap(
     return {
       file: fileLayout.file,
       address,
+      ...cell,
       start: span.start,
       end: span.end,
       kind: "metadata"
@@ -165,6 +186,7 @@ export function hitTestAddressMap(
   return {
     file: fileLayout.file,
     address,
+    ...cell,
     start: previous?.end ?? 0n,
     end: next?.start ?? fileLayout.file.size,
     kind: "unmapped"

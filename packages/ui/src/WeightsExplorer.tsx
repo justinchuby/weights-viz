@@ -591,7 +591,7 @@ function WeightMap({
           className="wv-tooltip"
           style={{
             left: Math.min(size.width - 280, Math.max(8, hover.clientX - (canvasRef.current?.getBoundingClientRect().left ?? 0) + 12)),
-            top: Math.min(size.height - 150, Math.max(8, hover.clientY - (canvasRef.current?.getBoundingClientRect().top ?? 0) + 12))
+            top: Math.min(size.height - 230, Math.max(8, hover.clientY - (canvasRef.current?.getBoundingClientRect().top ?? 0) + 12))
           }}
         >
           {hover.hit.kind === "tensor" && hover.hit.tensor ? (
@@ -625,12 +625,23 @@ function WeightMap({
             <>
               <b>Unmapped / alignment gap</b>
               <span>{hover.hit.file.name}</span>
+              <span>Padding: {formatBytes(hover.hit.end - hover.hit.start)}</span>
+              {formattedAlignment(hover.hit.file) && (
+                <span>
+                  Declared {hover.hit.file.format.toUpperCase()} alignment:{" "}
+                  {formattedAlignment(hover.hit.file)}
+                </span>
+              )}
               <code>Pointer: {formatAddress(hover.hit.address)}</code>
               <code>
                 Gap: {formatAddress(hover.hit.start)} → {formatAddress(hover.hit.end)}
               </code>
             </>
           )}
+          <span>Grid cell: {formatBytes(hover.hit.bytesPerCell)}</span>
+          <code>
+            Cell: {formatAddress(hover.hit.cellStart)} → {formatAddress(hover.hit.cellEnd)}
+          </code>
         </div>
       )}
     </div>
@@ -640,6 +651,21 @@ function WeightMap({
 function tensorEnd(tensor: TensorRecord): bigint {
   const last = tensor.byteSegments?.at(-1);
   return last ? last.byteOffset + last.byteLength : tensor.byteOffset + tensor.byteLength;
+}
+
+function declaredAlignment(file: ParsedFile): bigint | undefined {
+  if (file.format !== "gguf") return undefined;
+  const value = file.metadata["general.alignment"];
+  if (typeof value === "bigint" && value > 0n) return value;
+  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) {
+    return BigInt(value);
+  }
+  return 32n;
+}
+
+function formattedAlignment(file: ParsedFile): string | undefined {
+  const alignment = declaredAlignment(file);
+  return alignment === undefined ? undefined : formatBytes(alignment);
 }
 
 function drawAddressMap(
@@ -758,8 +784,12 @@ function drawAddressRuler(
       context.fillStyle = theme.muted;
       context.font = "9px ui-monospace, monospace";
       context.fillText(
-        `${formatBytes(fileLayout.bytesPerRow)} / row`,
-        Math.max(112, viewport.width - 130),
+        `${formatBytes(fileLayout.bytesPerCell)} / cell · ${formatBytes(fileLayout.bytesPerRow)} / row${
+          formattedAlignment(fileLayout.file)
+            ? ` · ${formattedAlignment(fileLayout.file)} alignment`
+            : ""
+        }`,
+        Math.max(112, viewport.width - 300),
         headerY
       );
     }
