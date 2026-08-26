@@ -651,6 +651,16 @@ function WeightMap({
           >↺</button>
         </div>
       </div>
+      <VerticalMapScrollbar
+        viewportHeight={size.height}
+        contentHeight={layout.contentHeight * zoom}
+        value={-offset.y}
+        onChange={(value) =>
+          setOffset((current) =>
+            clampOffset({ ...current, y: -value }, layout, size, zoom)
+          )
+        }
+      />
       {hover && (
         <div
           className="wv-tooltip"
@@ -722,6 +732,104 @@ function WeightMap({
           </code>
         </div>
       )}
+    </div>
+  );
+}
+
+function VerticalMapScrollbar({
+  viewportHeight,
+  contentHeight,
+  value,
+  onChange
+}: {
+  viewportHeight: number;
+  contentHeight: number;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startY: number;
+    startValue: number;
+    travel: number;
+  } | undefined>(undefined);
+  const max = Math.max(0, contentHeight - viewportHeight);
+  if (max <= 0) return null;
+
+  const trackHeight = Math.max(1, viewportHeight - 68);
+  const thumbHeight = Math.min(
+    trackHeight,
+    Math.max(32, trackHeight * (viewportHeight / contentHeight))
+  );
+  const travel = Math.max(1, trackHeight - thumbHeight);
+  const current = Math.min(max, Math.max(0, value));
+  const thumbTop = (current / max) * travel;
+  const setClamped = (next: number) =>
+    onChange(Math.min(max, Math.max(0, next)));
+
+  return (
+    <div
+      ref={trackRef}
+      className="wv-map-scrollbar"
+      role="scrollbar"
+      aria-label="Map vertical scroll"
+      aria-orientation="vertical"
+      aria-valuemin={0}
+      aria-valuemax={Math.round(max)}
+      aria-valuenow={Math.round(current)}
+      tabIndex={0}
+      onKeyDown={(event) => {
+        const smallStep = Math.max(40, viewportHeight * 0.1);
+        if (event.key === "ArrowUp") setClamped(current - smallStep);
+        else if (event.key === "ArrowDown") setClamped(current + smallStep);
+        else if (event.key === "PageUp") setClamped(current - viewportHeight * 0.9);
+        else if (event.key === "PageDown") setClamped(current + viewportHeight * 0.9);
+        else if (event.key === "Home") setClamped(0);
+        else if (event.key === "End") setClamped(max);
+        else return;
+        event.preventDefault();
+      }}
+      onPointerDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        setClamped(
+          ((event.clientY - rect.top - thumbHeight / 2) / travel) * max
+        );
+      }}
+    >
+      <div
+        className="wv-map-scrollbar-thumb"
+        style={{ height: thumbHeight, transform: `translateY(${thumbTop}px)` }}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          dragRef.current = {
+            pointerId: event.pointerId,
+            startY: event.clientY,
+            startValue: current,
+            travel
+          };
+          event.preventDefault();
+        }}
+        onPointerMove={(event) => {
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== event.pointerId) return;
+          setClamped(
+            drag.startValue +
+              ((event.clientY - drag.startY) / drag.travel) * max
+          );
+        }}
+        onPointerUp={(event) => {
+          if (dragRef.current?.pointerId !== event.pointerId) return;
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+          dragRef.current = undefined;
+        }}
+        onPointerCancel={() => {
+          dragRef.current = undefined;
+        }}
+      />
     </div>
   );
 }

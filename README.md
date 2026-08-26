@@ -130,8 +130,10 @@ normalization/bias, and convolution.
 Hovering reports the exact pointer address and the surrounding tensor,
 metadata, or unmapped range. Drag the map with the primary pointer button to
 pan. A wheel or two-finger trackpad gesture scrolls the map; trackpad pinch or
-Ctrl/Cmd + wheel zooms around the pointer. Selecting a tensor opens its shape,
-storage, exact addresses, and value-sampling controls in the inspector.
+Ctrl/Cmd + wheel zooms around the pointer. A synchronized vertical scrollbar
+supports direct dragging, track clicks, and keyboard navigation. Selecting a
+tensor opens its shape, storage, exact addresses, and value-sampling controls
+in the inspector.
 The Metadata tab exposes file-level model metadata, including searchable GGUF
 KV entries such as architecture, model name, quantization details, and
 tokenizer configuration.
