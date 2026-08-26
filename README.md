@@ -17,7 +17,7 @@ The project ships the same React visualization in two hosts:
 | --- | --- | --- | --- |
 | SafeTensors | All official dtypes, including packed F4/F6, plus header metadata, shape, and exact ranges | On-demand samples and statistics for scalar dtypes | `*.safetensors.index.json` automatically joins shards |
 | GGUF v2/v3 | All current GGML tensor type IDs and block sizes, KV metadata, alignment, and exact ranges | On-demand samples for scalar and supported common quantized dtypes | Each GGUF is shown as one model |
-| ONNX | All current `TensorProto.DataType` values through `INT2`, initializer shape, inline range, and external-data declarations | Metadata only | External location, offset, and length are displayed but not fetched |
+| ONNX | All current `TensorProto.DataType` values through `INT2`, initializer shape, and exact external-data ranges | Metadata only | Referenced `.data` files become the visualized address spaces |
 
 Recognizing a dtype and calculating its encoded byte length are separate from
 numeric decoding. Known GGML quantization types remain accurately sized and
@@ -50,8 +50,10 @@ in VS Code.
 - Public Hugging Face files work directly. Gated/private repositories require
   authentication, so download those files locally and open them from disk.
 - SafeTensors index URLs resolve relative shard URLs automatically.
-- Remote ONNX files are downloaded in full because protobuf does not provide a
-  separately addressable metadata header. The client enforces a 50 MiB limit.
+- The ONNX protobuf manifest is downloaded in full with a 50 MiB limit.
+  Referenced external-data files are resolved relative to the manifest URL and
+  accessed with HTTP Range requests; the byte map shows those physical files
+  rather than the protobuf container.
 - The static web app has no proxy. The origin must allow CORS, expose the
   `Content-Range` response header, and return valid `206 Partial Content`
   responses. A clear error is shown when these requirements are not met.

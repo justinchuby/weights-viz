@@ -60,6 +60,25 @@ describe("address map", () => {
     expect(wrapped?.rects.at(-1)?.width).toBeGreaterThan(0);
   });
 
+  it("maps external ONNX tensors in their resolved data-file address space", () => {
+    const tensor = {
+      ...makeTensor("external", 32n, 16n),
+      storage: "external" as const,
+      externalLocation: "model.onnx.data",
+      externalOffset: 32n,
+      externalLength: 16n
+    };
+    const layout = createAddressMapLayout(makeModel(128n, [tensor]), 1132);
+
+    expect(
+      layout.files[0]?.spans.find((span) => span.tensor?.name === "external")
+    ).toMatchObject({
+      start: 32n,
+      end: 48n,
+      tensor: { name: "external" }
+    });
+  });
+
   it("stacks files as independent address spaces", () => {
     const first = makeFile("first", 100n * 1024n ** 2n, []);
     const second = makeFile("second", 2n * 1024n ** 4n, []);

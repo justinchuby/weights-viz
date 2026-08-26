@@ -751,6 +751,15 @@ function drawAddressMap(
 
     for (const span of fileLayout.spans) {
       if (!span.tensor || !span.visible) continue;
+      context.strokeStyle = theme.mapBackground;
+      context.globalAlpha = 0.92;
+      context.lineWidth = 1 / zoom;
+      for (const rect of span.rects) {
+        if (isVisible(rect, visibleTop, visibleBottom)) {
+          context.strokeRect(rect.x, rect.y, rect.width, rect.height);
+        }
+      }
+      context.globalAlpha = 1;
       if (selected?.id === span.tensor.id) {
         context.strokeStyle = theme.selection;
         context.lineWidth = 2 / zoom;

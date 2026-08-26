@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { loadSources, MemorySource, normalizeModelUrl } from "../src";
+import {
+  loadSources,
+  MemorySource,
+  normalizeModelUrl,
+  validateOnnxExternalLocation
+} from "../src";
 
 function safeTensor(name: string): MemorySource {
   const header = new TextEncoder().encode(
@@ -84,4 +89,125 @@ describe("loadSources", () => {
     expect(models[0]?.files).toHaveLength(1);
     expect(models[0]?.diagnostics[0]?.message).toContain("missing.safetensors");
   });
+
+  it("maps ONNX external initializers into the referenced data file", async () => {
+    const manifest = externalOnnx("model.onnx.data", 16n, 16n);
+    const data = new MemorySource("model.onnx.data", new Uint8Array(64));
+    const models = await loadSources([manifest, data]);
+
+    expect(models).toHaveLength(1);
+    expect(models[0]?.files).toHaveLength(1);
+    expect(models[0]?.files[0]).toMatchObject({
+      id: data.id,
+      name: "model.onnx.data",
+      size: 64n
+    });
+    expect(models[0]?.files[0]?.tensors[0]).toMatchObject({
+      name: "weight",
+      fileId: data.id,
+      byteOffset: 16n,
+      byteLength: 16n,
+      storage: "external"
+    });
+    expect(models[0]?.diagnostics).toEqual([]);
+  });
+
+  it("reports a missing ONNX external data file", async () => {
+    const models = await loadSources([
+      externalOnnx("model.onnx.data", 0n, 16n)
+    ]);
+
+    expect(models[0]?.files).toEqual([]);
+    expect(models[0]?.diagnostics[0]?.message).toContain(
+      "Missing ONNX external data file"
+    );
+  });
+
+  it("rejects unsafe ONNX external locations", () => {
+    expect(() => validateOnnxExternalLocation("../weights.data")).toThrow(
+      /Unsafe/
+    );
+    expect(() => validateOnnxExternalLocation("https://example.com/data")).toThrow(
+      /relative/
+    );
+    expect(validateOnnxExternalLocation("shards/model.onnx.data")).toBe(
+      "shards/model.onnx.data"
+    );
+  });
 });
+
+function externalOnnx(
+  location: string,
+  offset: bigint,
+  length: bigint
+): MemorySource {
+  const tensor = protoMessage(
+    5,
+    concatBytes(
+      protoVarint(1, 4n),
+      protoVarint(2, 1n),
+      protoBytes(8, new TextEncoder().encode("weight")),
+      protoMessage(
+        13,
+        concatBytes(
+          protoBytes(1, new TextEncoder().encode("location")),
+          protoBytes(2, new TextEncoder().encode(location))
+        )
+      ),
+      protoMessage(
+        13,
+        concatBytes(
+          protoBytes(1, new TextEncoder().encode("offset")),
+          protoBytes(2, new TextEncoder().encode(offset.toString()))
+        )
+      ),
+      protoMessage(
+        13,
+        concatBytes(
+          protoBytes(1, new TextEncoder().encode("length")),
+          protoBytes(2, new TextEncoder().encode(length.toString()))
+        )
+      ),
+      protoVarint(14, 1n)
+    )
+  );
+  return new MemorySource(
+    "model.onnx",
+    Uint8Array.from(protoMessage(7, tensor))
+  );
+}
+
+function protoVarint(field: number, value: bigint): number[] {
+  return [...encodeVarint(BigInt(field << 3)), ...encodeVarint(value)];
+}
+
+function protoBytes(field: number, value: Uint8Array): number[] {
+  return [
+    ...encodeVarint(BigInt((field << 3) | 2)),
+    ...encodeVarint(BigInt(value.byteLength)),
+    ...value
+  ];
+}
+
+function protoMessage(field: number, value: number[]): number[] {
+  return [
+    ...encodeVarint(BigInt((field << 3) | 2)),
+    ...encodeVarint(BigInt(value.length)),
+    ...value
+  ];
+}
+
+function concatBytes(...parts: number[][]): number[] {
+  return parts.flat();
+}
+
+function encodeVarint(value: bigint): number[] {
+  const bytes: number[] = [];
+  let remaining = value;
+  while (remaining >= 0x80n) {
+    bytes.push(Number((remaining & 0x7fn) | 0x80n));
+    remaining >>= 7n;
+  }
+  bytes.push(Number(remaining));
+  return bytes;
+}

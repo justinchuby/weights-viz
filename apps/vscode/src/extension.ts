@@ -6,6 +6,7 @@ import {
   GgufParser,
   loadModelUrl,
   loadSources,
+  onnxExternalLocations,
   OnnxParser,
   SafeTensorsParser,
   type Parser,
@@ -191,6 +192,15 @@ async function collectSources(uris: vscode.Uri[]): Promise<RandomAccessSource[]>
 
 async function discoverSources(uri: vscode.Uri): Promise<RandomAccessSource[]> {
   const primary = await VscodeFileSource.create(uri);
+  if (primary.name.toLowerCase().endsWith(".onnx")) {
+    const manifest = await new OnnxParser().parse(primary);
+    const sources: RandomAccessSource[] = [primary];
+    for (const location of onnxExternalLocations(manifest)) {
+      const externalUri = vscode.Uri.joinPath(uri, "..", location);
+      sources.push(await VscodeFileSource.create(externalUri));
+    }
+    return sources;
+  }
   if (!primary.name.toLowerCase().endsWith(".safetensors.index.json")) {
     return [primary];
   }

@@ -245,7 +245,6 @@ function createFileSpans(
 function tensorSegments(
   tensor: TensorRecord
 ): Array<{ byteOffset: bigint; byteLength: bigint }> {
-  if (tensor.storage === "external") return [];
   return tensor.byteSegments?.length
     ? tensor.byteSegments
     : [{ byteOffset: tensor.byteOffset, byteLength: tensor.byteLength }];

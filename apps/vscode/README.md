@@ -13,7 +13,8 @@ Code.
 - Search file-level metadata, including GGUF model and tokenizer KV entries.
 - Sample values from SafeTensors and supported GGUF types on demand.
 - Open `*.safetensors.index.json` to combine model shards automatically.
-- Inspect ONNX initializer and external-data location metadata.
+- Visualize ONNX initializers in the physical address spaces of their referenced
+  external `.data` files.
 - Run **Weights Viz: Open Model Files** to pick model files with the native VS
   Code dialog, or use the **Open files** button inside the viewer.
 - Run **Weights Viz: Open Model URL** to inspect public remote models with HTTP
@@ -25,8 +26,9 @@ extension host for the native picker instead of using an HTML file input.
 ## Privacy
 
 - Local model files are parsed on your machine and are never uploaded.
-- The extension reads only files you explicitly open and SafeTensors shards
-  referenced by an index you open.
+- The extension reads only files you explicitly open, SafeTensors shards
+  referenced by an index, and ONNX external-data files referenced by a manifest
+  you open.
 - Parsed metadata and requested value samples pass only between the extension
   host and its local VS Code webview.
 - The extension contains no telemetry, analytics, advertising, authentication,

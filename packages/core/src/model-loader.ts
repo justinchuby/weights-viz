@@ -6,6 +6,10 @@ import {
 } from "./data-source";
 import { detectFormat } from "./detect";
 import { ParseError } from "./errors";
+import {
+  materializeOnnxModel,
+  onnxExternalLocations
+} from "./onnx-external";
 import { GgufParser } from "./parsers/gguf";
 import { OnnxParser } from "./parsers/onnx";
 import { SafeTensorsParser } from "./parsers/safetensors";
@@ -16,6 +20,11 @@ import {
   type Parser,
   type RandomAccessSource
 } from "./types";
+
+export {
+  onnxExternalLocations,
+  validateOnnxExternalLocation
+} from "./onnx-external";
 
 const parsers = {
   safetensors: new SafeTensorsParser(),
@@ -53,6 +62,17 @@ export async function loadSources(
   }
 
   for (const source of sources) {
+    if (consumed.has(source.id) || !source.name.toLowerCase().endsWith(".onnx")) {
+      continue;
+    }
+    const manifest = await parsers.onnx.parse(source, signal ? { signal } : {});
+    const result = materializeOnnxModel(manifest, sources);
+    models.push(result.model);
+    consumed.add(source.id);
+    result.usedSourceIds.forEach((id) => consumed.add(id));
+  }
+
+  for (const source of sources) {
     if (consumed.has(source.id)) continue;
     const file = await parseSource(source, signal);
     models.push({
@@ -76,14 +96,48 @@ export async function loadModelUrl(
     return [await loadRemoteSafeTensorsIndex(url, signal, onSource)];
   }
   if (lowerPath.endsWith(".onnx")) {
-    const source = await fetchRemoteOnnx(url, REMOTE_ONNX_MAX_BYTES, signal);
-    onSource?.(source);
-    return loadSources([source], signal);
+    return [
+      await loadRemoteOnnx(url, signal, onSource)
+    ];
   }
-
   const source = await HttpRangeSource.create(url, signal ? { signal } : {});
   onSource?.(source);
   return loadSources([source], signal);
+}
+
+async function loadRemoteOnnx(
+  url: string,
+  signal?: AbortSignal,
+  onSource?: (source: RandomAccessSource) => void
+): Promise<ParsedModel> {
+  const manifestSource = await fetchRemoteOnnx(
+    url,
+    REMOTE_ONNX_MAX_BYTES,
+    signal
+  );
+  onSource?.(manifestSource);
+  const manifest = await parsers.onnx.parse(
+    manifestSource,
+    signal ? { signal } : {}
+  );
+  const externalSources: RandomAccessSource[] = [];
+  for (const location of onnxExternalLocations(manifest)) {
+    const externalUrl = new URL(location, url);
+    const manifestUrl = new URL(url);
+    if (
+      externalUrl.origin !== manifestUrl.origin ||
+      !["http:", "https:"].includes(externalUrl.protocol)
+    ) {
+      throw new ParseError(`Unsafe ONNX external data URL: ${externalUrl}`);
+    }
+    const source = await HttpRangeSource.create(
+      externalUrl.toString(),
+      signal ? { signal } : {}
+    );
+    externalSources.push(source);
+    onSource?.(source);
+  }
+  return materializeOnnxModel(manifest, externalSources).model;
 }
 
 export function normalizeModelUrl(rawUrl: string): string {
