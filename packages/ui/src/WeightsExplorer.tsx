@@ -13,7 +13,12 @@ import {
   type AddressMapLayout,
   type AddressRect
 } from "./address-map";
-import { formatAddress, formatBytes, formatShape } from "./format";
+import {
+  formatAddress,
+  formatBytes,
+  formatParameterCount,
+  formatShape
+} from "./format";
 
 interface WeightsExplorerProps {
   models: ParsedModel[];
@@ -309,6 +314,10 @@ export function WeightsExplorer({
                 <h2>{selected.name}</h2>
                 <dl>
                   <Detail label="Shape" value={formatShape(selected.shape)} />
+                  <Detail
+                    label="Parameters"
+                    value={formatParameterCount(selected.shape)}
+                  />
                   <Detail label="Size" value={formatBytes(selected.byteLength)} />
                   <Detail
                     label={selected.storage === "external" ? "External start" : "Start"}
@@ -654,7 +663,10 @@ function WeightMap({
             <>
               <b>{hover.hit.tensor.name}</b>
               <span>{hover.hit.tensor.dtype} · {formatShape(hover.hit.tensor.shape)}</span>
-              <span>{formatBytes(hover.hit.tensor.byteLength)}</span>
+              <span>
+                {formatParameterCount(hover.hit.tensor.shape)} params ·{" "}
+                {formatBytes(hover.hit.tensor.byteLength)}
+              </span>
               <code>Pointer: {formatAddress(hover.hit.address)}</code>
               <code>
                 Tensor: {formatAddress(hover.hit.start)} → {formatAddress(hover.hit.end)}
@@ -664,6 +676,10 @@ function WeightMap({
             <>
               <b>{hover.hit.tensor.name} · filtered</b>
               <span>{hover.hit.tensor.dtype} · {formatShape(hover.hit.tensor.shape)}</span>
+              <span>
+                {formatParameterCount(hover.hit.tensor.shape)} params ·{" "}
+                {formatBytes(hover.hit.tensor.byteLength)}
+              </span>
               <code>Pointer: {formatAddress(hover.hit.address)}</code>
               <code>
                 Tensor: {formatAddress(hover.hit.start)} → {formatAddress(hover.hit.end)}

@@ -16,3 +16,11 @@ export function formatAddress(value: bigint): string {
 export function formatShape(shape: bigint[]): string {
   return shape.length ? shape.map(String).join(" × ") : "scalar";
 }
+
+export function parameterCount(shape: bigint[]): bigint {
+  return shape.reduce((count, dimension) => count * dimension, 1n);
+}
+
+export function formatParameterCount(shape: bigint[]): string {
+  return parameterCount(shape).toLocaleString("en-US");
+}
