@@ -42,6 +42,11 @@ in VS Code.
 
 - GGUF and SafeTensors are read with progressive HTTP Range requests. Only the
   header, tensor directory, and explicitly requested sample ranges are fetched.
+- Hugging Face `.../blob/...` file-page links are converted automatically to
+  CORS-compatible `.../resolve/...` byte-range URLs. Repository home pages do
+  not identify a file; choose a model file under **Files and versions** first.
+- Public Hugging Face files work directly. Gated/private repositories require
+  authentication, so download those files locally and open them from disk.
 - SafeTensors index URLs resolve relative shard URLs automatically.
 - Remote ONNX files are downloaded in full because protobuf does not provide a
   separately addressable metadata header. The client enforces a 50 MiB limit.

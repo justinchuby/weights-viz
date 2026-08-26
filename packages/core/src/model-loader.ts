@@ -70,7 +70,7 @@ export async function loadModelUrl(
   signal?: AbortSignal,
   onSource?: (source: RandomAccessSource) => void
 ): Promise<ParsedModel[]> {
-  const url = new URL(rawUrl).toString();
+  const url = normalizeModelUrl(rawUrl);
   const lowerPath = new URL(url).pathname.toLowerCase();
   if (lowerPath.endsWith(".safetensors.index.json")) {
     return [await loadRemoteSafeTensorsIndex(url, signal, onSource)];
@@ -80,9 +80,42 @@ export async function loadModelUrl(
     onSource?.(source);
     return loadSources([source], signal);
   }
+
   const source = await HttpRangeSource.create(url, signal ? { signal } : {});
   onSource?.(source);
   return loadSources([source], signal);
+}
+
+export function normalizeModelUrl(rawUrl: string): string {
+  const url = new URL(rawUrl);
+  if (url.hostname !== "huggingface.co" && url.hostname !== "www.huggingface.co") {
+    return url.toString();
+  }
+  url.hostname = "huggingface.co";
+  const segments = url.pathname.split("/").filter(Boolean);
+  const routeIndex = segments.findIndex(
+    (segment) => segment === "blob" || segment === "resolve"
+  );
+  if (routeIndex === -1) {
+    throw new ParseError(
+      "This is a Hugging Face repository page, not a model file. Open Files and versions, choose a .gguf, .safetensors, .safetensors.index.json, or .onnx file, then paste that file URL."
+    );
+  }
+  if (routeIndex < 2 || routeIndex + 2 >= segments.length) {
+    throw new ParseError("The Hugging Face file URL is incomplete");
+  }
+  if (segments[routeIndex] === "blob") segments[routeIndex] = "resolve";
+  url.pathname = `/${segments.map(encodeURIComponentPreservingEscapes).join("/")}`;
+  url.searchParams.delete("download");
+  return url.toString();
+}
+
+function encodeURIComponentPreservingEscapes(segment: string): string {
+  try {
+    return encodeURIComponent(decodeURIComponent(segment));
+  } catch {
+    return encodeURIComponent(segment);
+  }
 }
 
 async function loadSafeTensorsIndex(

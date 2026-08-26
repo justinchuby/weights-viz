@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadSources, MemorySource } from "../src";
+import { loadSources, MemorySource, normalizeModelUrl } from "../src";
 
 function safeTensor(name: string): MemorySource {
   const header = new TextEncoder().encode(
@@ -37,6 +37,34 @@ describe("loadSources", () => {
     expect(models).toHaveLength(1);
     expect(models[0]?.files).toHaveLength(2);
     expect(models[0]?.diagnostics).toEqual([]);
+  });
+
+  describe("normalizeModelUrl", () => {
+    it("turns Hugging Face blob pages into ranged download URLs", () => {
+      expect(
+        normalizeModelUrl(
+          "https://huggingface.co/org/model/blob/main/weights/model.Q4_K_M.gguf?download=true"
+        )
+      ).toBe(
+        "https://huggingface.co/org/model/resolve/main/weights/model.Q4_K_M.gguf"
+      );
+    });
+
+    it("preserves Hugging Face resolve URLs", () => {
+      expect(
+        normalizeModelUrl(
+          "https://huggingface.co/org/model/resolve/main/model.safetensors"
+        )
+      ).toBe(
+        "https://huggingface.co/org/model/resolve/main/model.safetensors"
+      );
+    });
+
+    it("rejects repository pages that do not identify a file", () => {
+      expect(() =>
+        normalizeModelUrl("https://huggingface.co/org/model")
+      ).toThrow(/repository page/);
+    });
   });
 
   it("reports a missing shard without hiding available shards", async () => {

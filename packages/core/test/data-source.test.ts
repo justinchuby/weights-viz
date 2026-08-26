@@ -53,7 +53,20 @@ describe("HttpRangeSource", () => {
     const source = await HttpRangeSource.create("https://example.test/model.gguf", {
       fetch: fetcher
     });
+
     await expect(source.read(2n, 2)).rejects.toThrow(/Unexpected Content-Range/);
+  });
+
+  it("explains gated Hugging Face files", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("denied", { status: 403 }));
+    await expect(
+      HttpRangeSource.create(
+        "https://huggingface.co/org/private/resolve/main/model.gguf",
+        { fetch: fetcher }
+      )
+    ).rejects.toThrow(/Gated and private/);
   });
 });
 

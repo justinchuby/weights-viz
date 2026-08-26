@@ -72,13 +72,28 @@ export class HttpRangeSource implements RandomAccessSource {
   }
 
   static async create(url: string, options: HttpSourceOptions = {}): Promise<HttpRangeSource> {
-    const fetcher = options.fetch ?? globalThis.fetch;
-    const response = await fetcher(url, {
-      headers: { Range: "bytes=0-0" },
-      mode: "cors",
-      credentials: "omit",
-      ...(options.signal ? { signal: options.signal } : {})
-    });
+    const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
+    let response: Response;
+    try {
+      response = await fetcher(url, {
+        headers: { Range: "bytes=0-0" },
+        mode: "cors",
+        credentials: "omit",
+        ...(options.signal ? { signal: options.signal } : {})
+      });
+    } catch (error) {
+      throw remoteFetchError(url, error);
+    }
+    if ((response.status === 401 || response.status === 403) && isHuggingFaceUrl(url)) {
+      throw new ParseError(
+        "Hugging Face denied this file. Gated and private repositories require authentication, which is not sent by this static app. Download the file locally and open it instead."
+      );
+    }
+    if (response.status === 404 && isHuggingFaceUrl(url)) {
+      throw new ParseError(
+        "Hugging Face could not find this file. Check the repository, revision, and filename."
+      );
+    }
     if (response.status !== 206) {
       throw new ParseError(
         `Server must support CORS HTTP Range requests (expected 206, received ${response.status})`
@@ -103,15 +118,21 @@ export class HttpRangeSource implements RandomAccessSource {
     const cached = this.cache.get(key);
     if (cached) return cached.slice();
     const end = offset + BigInt(length) - 1n;
-    const response = await this.fetcher(this.url, {
-      headers: { Range: `bytes=${offset}-${end}` },
-      mode: "cors",
-      credentials: "omit",
-      ...(signal ? { signal } : {})
-    });
+    let response: Response;
+    try {
+      response = await this.fetcher(this.url, {
+        headers: { Range: `bytes=${offset}-${end}` },
+        mode: "cors",
+        credentials: "omit",
+        ...(signal ? { signal } : {})
+      });
+    } catch (error) {
+      throw remoteFetchError(this.url, error);
+    }
     if (response.status !== 206) {
       throw new ParseError(`Range request failed with HTTP ${response.status}`, offset);
     }
+
     const expected = `bytes ${offset}-${end}/${this.size}`;
     if (response.headers.get("content-range") !== expected) {
       throw new ParseError(
@@ -129,11 +150,27 @@ export class HttpRangeSource implements RandomAccessSource {
   }
 }
 
+function isHuggingFaceUrl(url: string): boolean {
+  return new URL(url).hostname === "huggingface.co";
+}
+
+function remoteFetchError(url: string, cause: unknown): ParseError {
+  const detail = cause instanceof Error ? cause.message : String(cause);
+  if (isHuggingFaceUrl(url)) {
+    return new ParseError(
+      `The browser blocked the Hugging Face request. Public /resolve/ file URLs normally support CORS and byte ranges; gated/private files and restrictive embedded browsers do not. Download the file locally or open this app in a normal browser. (${detail})`
+    );
+  }
+  return new ParseError(
+    `The browser blocked the remote request. The server must allow CORS and HTTP Range requests. (${detail})`
+  );
+}
+
 export async function fetchRemoteOnnx(
   url: string,
   maxBytes: number,
   signal?: AbortSignal,
-  fetcher: typeof globalThis.fetch = globalThis.fetch
+  fetcher: typeof globalThis.fetch = globalThis.fetch.bind(globalThis)
 ): Promise<MemorySource> {
   const response = await fetcher(url, {
     mode: "cors",
