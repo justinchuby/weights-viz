@@ -6,7 +6,7 @@ sampled values without loading the whole model into memory.
 
 **Live app:** https://www.justinchuby.com/weights-viz/
 
-![Weights Viz visualizing a sharded SafeTensors model](docs/weights-viz.png)
+![Weights Viz visualizing a sharded SafeTensors model](docs/weights-viz.gif)
 
 The project ships the same React visualization in two hosts:
 
