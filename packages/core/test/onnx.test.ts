@@ -186,6 +186,37 @@ describe("OnnxParser", () => {
     });
   });
 
+  it("recognizes every current low-precision TensorProto data type", async () => {
+      const tensors = [
+        { id: 24, name: "FLOAT8E8M0" },
+        { id: 25, name: "UINT2" },
+        { id: 26, name: "INT2" }
+      ].map(({ id, name }) =>
+        messageField(
+          5,
+          concat(
+            varintField(1, 1n),
+            varintField(2, BigInt(id)),
+            stringField(8, name),
+            bytesField(9, [0])
+          )
+        )
+      );
+      const bytes = toUint8Array(
+        concat(messageField(8, concat(...tensors)))
+      );
+
+      const parsed = await new OnnxParser().parse(
+        new MemorySource("low-precision.onnx", bytes.bytes)
+      );
+
+      expect(parsed.tensors.map((tensor) => tensor.dtype)).toEqual([
+        "FLOAT8E8M0",
+        "UINT2",
+        "INT2"
+      ]);
+  });
+
   it("rejects malformed length-delimited protobuf fields", async () => {
     const malformed = Uint8Array.from([
       ...encodeVarint((8 << 3) | 2),

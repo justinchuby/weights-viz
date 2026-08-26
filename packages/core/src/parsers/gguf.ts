@@ -63,15 +63,45 @@ const GGML_TYPES = new Map<number, GgmlTypeSpec>([
   [1, { name: "F16", sampleSupport: "values", scalarBytes: 2 }],
   [2, { name: "Q4_0", sampleSupport: "values", blockBytes: 18, blockElements: 32 }],
   [3, { name: "Q4_1", sampleSupport: "values", blockBytes: 20, blockElements: 32 }],
+  [4, { name: "Q4_2", sampleSupport: "unsupported" }],
+  [5, { name: "Q4_3", sampleSupport: "unsupported" }],
   [6, { name: "Q5_0", sampleSupport: "values", blockBytes: 22, blockElements: 32 }],
   [7, { name: "Q5_1", sampleSupport: "values", blockBytes: 24, blockElements: 32 }],
   [8, { name: "Q8_0", sampleSupport: "values", blockBytes: 34, blockElements: 32 }],
+  [9, { name: "Q8_1", sampleSupport: "unsupported", blockBytes: 36, blockElements: 32 }],
+  [10, { name: "Q2_K", sampleSupport: "unsupported", blockBytes: 84, blockElements: 256 }],
+  [11, { name: "Q3_K", sampleSupport: "unsupported", blockBytes: 110, blockElements: 256 }],
+  [12, { name: "Q4_K", sampleSupport: "unsupported", blockBytes: 144, blockElements: 256 }],
+  [13, { name: "Q5_K", sampleSupport: "unsupported", blockBytes: 176, blockElements: 256 }],
+  [14, { name: "Q6_K", sampleSupport: "unsupported", blockBytes: 210, blockElements: 256 }],
+  [15, { name: "Q8_K", sampleSupport: "unsupported", blockBytes: 292, blockElements: 256 }],
+  [16, { name: "IQ2_XXS", sampleSupport: "unsupported", blockBytes: 66, blockElements: 256 }],
+  [17, { name: "IQ2_XS", sampleSupport: "unsupported", blockBytes: 74, blockElements: 256 }],
+  [18, { name: "IQ3_XXS", sampleSupport: "unsupported", blockBytes: 98, blockElements: 256 }],
+  [19, { name: "IQ1_S", sampleSupport: "unsupported", blockBytes: 50, blockElements: 256 }],
+  [20, { name: "IQ4_NL", sampleSupport: "unsupported", blockBytes: 18, blockElements: 32 }],
+  [21, { name: "IQ3_S", sampleSupport: "unsupported", blockBytes: 110, blockElements: 256 }],
+  [22, { name: "IQ2_S", sampleSupport: "unsupported", blockBytes: 82, blockElements: 256 }],
+  [23, { name: "IQ4_XS", sampleSupport: "unsupported", blockBytes: 136, blockElements: 256 }],
   [24, { name: "I8", sampleSupport: "metadata-only", scalarBytes: 1 }],
   [25, { name: "I16", sampleSupport: "metadata-only", scalarBytes: 2 }],
   [26, { name: "I32", sampleSupport: "metadata-only", scalarBytes: 4 }],
   [27, { name: "I64", sampleSupport: "metadata-only", scalarBytes: 8 }],
   [28, { name: "F64", sampleSupport: "metadata-only", scalarBytes: 8 }],
-  [30, { name: "BF16", sampleSupport: "metadata-only", scalarBytes: 2 }]
+  [29, { name: "IQ1_M", sampleSupport: "unsupported", blockBytes: 56, blockElements: 256 }],
+  [30, { name: "BF16", sampleSupport: "metadata-only", scalarBytes: 2 }],
+  [31, { name: "Q4_0_4_4", sampleSupport: "unsupported" }],
+  [32, { name: "Q4_0_4_8", sampleSupport: "unsupported" }],
+  [33, { name: "Q4_0_8_8", sampleSupport: "unsupported" }],
+  [34, { name: "TQ1_0", sampleSupport: "unsupported", blockBytes: 54, blockElements: 256 }],
+  [35, { name: "TQ2_0", sampleSupport: "unsupported", blockBytes: 66, blockElements: 256 }],
+  [36, { name: "IQ4_NL_4_4", sampleSupport: "unsupported" }],
+  [37, { name: "IQ4_NL_4_8", sampleSupport: "unsupported" }],
+  [38, { name: "IQ4_NL_8_8", sampleSupport: "unsupported" }],
+  [39, { name: "MXFP4", sampleSupport: "unsupported", blockBytes: 17, blockElements: 32 }],
+  [40, { name: "NVFP4", sampleSupport: "unsupported", blockBytes: 36, blockElements: 64 }],
+  [41, { name: "Q1_0", sampleSupport: "unsupported", blockBytes: 18, blockElements: 128 }],
+  [42, { name: "Q2_0", sampleSupport: "unsupported", blockBytes: 18, blockElements: 64 }]
 ]);
 
 function needMore(length: number, offset: number, remaining: number): ParseError {
@@ -534,14 +564,14 @@ export class GgufParser implements Parser {
       }
       const parsedTensor = sortedByOffset[index]!;
       const spec = getTypeSpec(parsedTensor.typeId);
-      const elements = product(current.shape);
-      const calculatedLength = spec?.scalarBytes
-        ? elements * BigInt(spec.scalarBytes)
-        : spec?.blockBytes && spec.blockElements
-          ? ((elements + BigInt(spec.blockElements) - 1n) /
-              BigInt(spec.blockElements)) *
-            BigInt(spec.blockBytes)
-          : undefined;
+      const calculatedLength = spec
+        ? calculateTensorByteLength(
+            current.name,
+            current.shape,
+            spec,
+            current.dataOffset
+          )
+        : undefined;
       const availableLength = end - current.dataOffset!;
       if (calculatedLength !== undefined && calculatedLength > availableLength) {
         throw new ParseError(
@@ -549,6 +579,7 @@ export class GgufParser implements Parser {
           current.dataOffset
         );
       }
+
       current.byteLength = calculatedLength ?? availableLength;
     }
 
@@ -562,4 +593,31 @@ export class GgufParser implements Parser {
       diagnostics
     };
   }
+}
+
+function calculateTensorByteLength(
+  name: string,
+  shape: bigint[],
+  spec: GgmlTypeSpec,
+  offset: bigint | undefined
+): bigint | undefined {
+  if (spec.scalarBytes) {
+    return product(shape) * BigInt(spec.scalarBytes);
+  }
+  if (!spec.blockBytes || !spec.blockElements) return undefined;
+
+  const rowElements = shape[0] ?? 1n;
+  const blockElements = BigInt(spec.blockElements);
+  if (rowElements % blockElements !== 0n) {
+    throw new ParseError(
+      `Tensor ${name} row length ${rowElements} is not divisible by block size ${blockElements}`,
+      offset
+    );
+  }
+  const rowCount = product(shape.slice(1));
+  return (
+    (rowElements / blockElements) *
+    BigInt(spec.blockBytes) *
+    rowCount
+  );
 }

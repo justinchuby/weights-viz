@@ -115,29 +115,87 @@ describe("SafeTensorsParser", () => {
     ]);
   });
 
-  it("emits diagnostics for unsupported dtypes without failing metadata parsing", async () => {
+  it("recognizes every official dtype and validates packed bit lengths", async () => {
+    const dtypeCases = [
+      ["BOOL", 8, 1],
+      ["F4", 4, 2],
+      ["F6_E2M3", 6, 4],
+      ["F6_E3M2", 6, 4],
+      ["U8", 8, 1],
+      ["I8", 8, 1],
+      ["F8_E5M2", 8, 1],
+      ["F8_E4M3", 8, 1],
+      ["F8_E8M0", 8, 1],
+      ["F8_E4M3FNUZ", 8, 1],
+      ["F8_E5M2FNUZ", 8, 1],
+      ["I16", 16, 1],
+      ["U16", 16, 1],
+      ["F16", 16, 1],
+      ["BF16", 16, 1],
+      ["I32", 32, 1],
+      ["U32", 32, 1],
+      ["F32", 32, 1],
+      ["C64", 64, 1],
+      ["F64", 64, 1],
+      ["I64", 64, 1],
+      ["U64", 64, 1]
+    ] as const;
     const file = createSafeTensorsFile(
-      [
-        {
-          name: "quantized",
-          dtype: "F8_E4M3FN",
-          shape: [4],
-          bytes: Uint8Array.from([1, 2, 3, 4])
-        }
-      ],
-      { source: "synthetic" }
+      dtypeCases.map(([dtype, bits, elements]) => ({
+        name: dtype,
+        dtype,
+        shape: [elements],
+        bytes: new Uint8Array((bits * elements) / 8)
+      }))
     );
 
-    const parsed = await parser.parse(new MemorySource("unsupported.safetensors", file.bytes));
+    const parsed = await parser.parse(
+      new MemorySource("all-dtypes.safetensors", file.bytes)
+    );
+
+    expect(parsed.diagnostics).toEqual([]);
+    for (const [dtype, bits, elements] of dtypeCases) {
+      const tensor = parsed.tensors.find((candidate) => candidate.name === dtype);
+      expect(tensor?.dtype).toBe(dtype);
+      expect(tensor?.byteLength).toBe(BigInt((bits * elements) / 8));
+    }
+  });
+
+  it("rejects non-byte-aligned packed tensors", async () => {
+    const file = createSafeTensorsFile([
+      {
+        name: "packed",
+        dtype: "F6_E2M3",
+        shape: [1],
+        bytes: new Uint8Array(1)
+      }
+    ]);
+
+    await expect(
+      parser.parse(new MemorySource("misaligned.safetensors", file.bytes))
+    ).rejects.toThrow(/require 6 bits, which is not byte-aligned/);
+  });
+
+  it("diagnoses unknown dtype identifiers without failing metadata parsing", async () => {
+    const file = createSafeTensorsFile([
+      {
+        name: "unknown",
+        dtype: "X99",
+        shape: [4],
+        bytes: Uint8Array.from([1, 2, 3, 4])
+      }
+    ]);
+
+    const parsed = await parser.parse(
+      new MemorySource("unknown.safetensors", file.bytes)
+    );
     const tensor = parsed.tensors[0]!;
 
-    expect(parsed.metadata).toEqual({ source: "synthetic" });
     expect(tensor.sampleSupport).toBe("unsupported");
     expect(parsed.diagnostics).toEqual([
       {
         severity: "warning",
-        message:
-          "Tensor quantized uses unsupported dtype F8_E4M3FN; value sampling is unavailable",
+        message: "Tensor unknown uses unknown SafeTensors dtype X99",
         offset: tensor.byteOffset
       }
     ]);

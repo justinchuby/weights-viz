@@ -26,6 +26,31 @@ interface DTypeInfo {
   read(reader: BinaryReader, label: string, offset: bigint): number;
 }
 
+const DTYPE_BITS: Record<string, number> = {
+  BOOL: 8,
+  F4: 4,
+  F6_E2M3: 6,
+  F6_E3M2: 6,
+  U8: 8,
+  I8: 8,
+  F8_E5M2: 8,
+  F8_E4M3: 8,
+  F8_E8M0: 8,
+  F8_E4M3FNUZ: 8,
+  F8_E5M2FNUZ: 8,
+  I16: 16,
+  U16: 16,
+  F16: 16,
+  BF16: 16,
+  I32: 32,
+  U32: 32,
+  F32: 32,
+  C64: 64,
+  F64: 64,
+  I64: 64,
+  U64: 64
+};
+
 const DTYPE_INFO: Record<string, DTypeInfo> = {
   F64: {
     byteSize: 8,
@@ -164,10 +189,10 @@ export class SafeTensorsParser implements Parser {
         continue;
       }
       const tensor = parseTensorRecord(name, value, source.id, dataStart, dataLength);
-      if (!DTYPE_INFO[tensor.dtype]) {
+      if (DTYPE_BITS[tensor.dtype] === undefined) {
         diagnostics.push({
           severity: "warning",
-          message: `Tensor ${tensor.name} uses unsupported dtype ${tensor.dtype}; value sampling is unavailable`,
+          message: `Tensor ${tensor.name} uses unknown SafeTensors dtype ${tensor.dtype}`,
           offset: tensor.byteOffset
         });
       }
@@ -317,9 +342,16 @@ function parseTensorRecord(
 
   assertRange(relativeStart, byteLength, dataLength, `SafeTensors tensor ${name}`);
 
-  const dtypeInfo = DTYPE_INFO[dtype];
-  if (dtypeInfo) {
-    const expectedByteLength = product(shape) * BigInt(dtypeInfo.byteSize);
+  const dtypeBits = DTYPE_BITS[dtype];
+  if (dtypeBits !== undefined) {
+    const expectedBits = product(shape) * BigInt(dtypeBits);
+    if (expectedBits % 8n !== 0n) {
+      throw new ParseError(
+        `SafeTensors tensor ${name} dtype ${dtype} and shape ${formatShape(shape)} require ${expectedBits} bits, which is not byte-aligned`,
+        dataStart + relativeStart
+      );
+    }
+    const expectedByteLength = expectedBits / 8n;
     if (expectedByteLength !== byteLength) {
       throw new ParseError(
         `SafeTensors tensor ${name} declares ${byteLength} bytes but dtype ${dtype} and shape ${formatShape(shape)} require ${expectedByteLength}`,
@@ -339,7 +371,7 @@ function parseTensorRecord(
     byteLength,
     dataOffset: absoluteOffset,
     storage: "inline",
-    sampleSupport: dtypeInfo ? "values" : "unsupported"
+    sampleSupport: DTYPE_INFO[dtype] ? "values" : "unsupported"
   };
 }
 

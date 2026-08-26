@@ -15,12 +15,14 @@ The project ships the same React visualization in two hosts:
 
 | Format | Layout and metadata | Values | Multi-file / external data |
 | --- | --- | --- | --- |
-| SafeTensors | Header metadata, dtype, shape, relative and absolute ranges | On-demand samples and statistics for scalar dtypes | `*.safetensors.index.json` automatically joins shards |
-| GGUF v2/v3 | KV metadata, alignment, tensor directory, GGML dtype and ranges | On-demand samples for scalar and supported common quantized dtypes | Each GGUF is shown as one model |
-| ONNX | Graph initializer name, dtype, shape, inline range, and external-data declarations | Metadata only | External location, offset, and length are displayed but not fetched |
+| SafeTensors | All official dtypes, including packed F4/F6, plus header metadata, shape, and exact ranges | On-demand samples and statistics for scalar dtypes | `*.safetensors.index.json` automatically joins shards |
+| GGUF v2/v3 | All current GGML tensor type IDs and block sizes, KV metadata, alignment, and exact ranges | On-demand samples for scalar and supported common quantized dtypes | Each GGUF is shown as one model |
+| ONNX | All current `TensorProto.DataType` values through `INT2`, initializer shape, inline range, and external-data declarations | Metadata only | External location, offset, and length are displayed but not fetched |
 
-Unknown GGUF quantization types remain fully visible in the byte map and are
-marked as unavailable for value decoding.
+Recognizing a dtype and calculating its encoded byte length are separate from
+numeric decoding. Known GGML quantization types remain accurately sized and
+named even when value sampling is unavailable. Future unknown type IDs remain
+visible using their declared file ranges and produce a diagnostic.
 
 ## Opening local files
 

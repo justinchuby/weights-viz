@@ -389,6 +389,134 @@ describe("GgufParser", () => {
     expect(source.reads.at(-1)!.length).toBeLessThan(bytes.length);
   });
 
+  it("recognizes and sizes every current GGML tensor type", async () => {
+      const currentTypes: Array<{
+        typeId: number;
+        name: string;
+        elements: number;
+        bytes: number;
+      }> = [
+        { typeId: 0, name: "F32", elements: 1, bytes: 4 },
+        { typeId: 1, name: "F16", elements: 1, bytes: 2 },
+        { typeId: 2, name: "Q4_0", elements: 32, bytes: 18 },
+        { typeId: 3, name: "Q4_1", elements: 32, bytes: 20 },
+        { typeId: 6, name: "Q5_0", elements: 32, bytes: 22 },
+        { typeId: 7, name: "Q5_1", elements: 32, bytes: 24 },
+        { typeId: 8, name: "Q8_0", elements: 32, bytes: 34 },
+        { typeId: 9, name: "Q8_1", elements: 32, bytes: 36 },
+        { typeId: 10, name: "Q2_K", elements: 256, bytes: 84 },
+        { typeId: 11, name: "Q3_K", elements: 256, bytes: 110 },
+        { typeId: 12, name: "Q4_K", elements: 256, bytes: 144 },
+        { typeId: 13, name: "Q5_K", elements: 256, bytes: 176 },
+        { typeId: 14, name: "Q6_K", elements: 256, bytes: 210 },
+        { typeId: 15, name: "Q8_K", elements: 256, bytes: 292 },
+        { typeId: 16, name: "IQ2_XXS", elements: 256, bytes: 66 },
+        { typeId: 17, name: "IQ2_XS", elements: 256, bytes: 74 },
+        { typeId: 18, name: "IQ3_XXS", elements: 256, bytes: 98 },
+        { typeId: 19, name: "IQ1_S", elements: 256, bytes: 50 },
+        { typeId: 20, name: "IQ4_NL", elements: 32, bytes: 18 },
+        { typeId: 21, name: "IQ3_S", elements: 256, bytes: 110 },
+        { typeId: 22, name: "IQ2_S", elements: 256, bytes: 82 },
+        { typeId: 23, name: "IQ4_XS", elements: 256, bytes: 136 },
+        { typeId: 24, name: "I8", elements: 1, bytes: 1 },
+        { typeId: 25, name: "I16", elements: 1, bytes: 2 },
+        { typeId: 26, name: "I32", elements: 1, bytes: 4 },
+        { typeId: 27, name: "I64", elements: 1, bytes: 8 },
+        { typeId: 28, name: "F64", elements: 1, bytes: 8 },
+        { typeId: 29, name: "IQ1_M", elements: 256, bytes: 56 },
+        { typeId: 30, name: "BF16", elements: 1, bytes: 2 },
+        { typeId: 34, name: "TQ1_0", elements: 256, bytes: 54 },
+        { typeId: 35, name: "TQ2_0", elements: 256, bytes: 66 },
+        { typeId: 39, name: "MXFP4", elements: 32, bytes: 17 },
+        { typeId: 40, name: "NVFP4", elements: 64, bytes: 36 },
+        { typeId: 41, name: "Q1_0", elements: 128, bytes: 18 },
+        { typeId: 42, name: "Q2_0", elements: 64, bytes: 18 }
+      ];
+      let relativeOffset = 0;
+      const tensors = currentTypes.map((type) => {
+        const tensor = {
+          name: type.name,
+          shape: [BigInt(type.elements), 2n],
+          typeId: type.typeId,
+          relativeOffset,
+          data: new Uint8Array(type.bytes * 2)
+        };
+        relativeOffset += type.bytes * 2 + 16;
+        return tensor;
+      });
+      const { bytes } = buildGguf({
+        littleEndian: true,
+        version: 3,
+        metadata: [],
+        tensors
+      });
+
+      const parsed = await new GgufParser().parse(
+        new MemorySource("all-types.gguf", bytes)
+      );
+
+      expect(parsed.diagnostics).toEqual([]);
+      for (const type of currentTypes) {
+        const tensor = getTensor(parsed, type.name);
+        expect(tensor.dtype).toBe(type.name);
+        expect(tensor.byteLength).toBe(BigInt(type.bytes * 2));
+      }
+    });
+
+    it("retains the names of reserved historical GGML type IDs", async () => {
+      const historicalTypes = [
+        [4, "Q4_2"],
+        [5, "Q4_3"],
+        [31, "Q4_0_4_4"],
+        [32, "Q4_0_4_8"],
+        [33, "Q4_0_8_8"],
+        [36, "IQ4_NL_4_4"],
+        [37, "IQ4_NL_4_8"],
+        [38, "IQ4_NL_8_8"]
+      ] as const;
+      const { bytes } = buildGguf({
+        littleEndian: true,
+        version: 3,
+        metadata: [],
+        tensors: historicalTypes.map(([typeId, name], index) => ({
+          name,
+          shape: [1n],
+          typeId,
+          relativeOffset: index,
+          data: new Uint8Array(1)
+        }))
+      });
+
+      const parsed = await new GgufParser().parse(
+        new MemorySource("historical-types.gguf", bytes)
+      );
+
+      expect(parsed.tensors.map((tensor) => tensor.dtype)).toEqual(
+        historicalTypes.map(([, name]) => name)
+      );
+      expect(parsed.diagnostics).toEqual([]);
+    });
+
+    it("rejects quantized rows that are not block-aligned", async () => {
+      const { bytes } = buildGguf({
+        littleEndian: true,
+        version: 3,
+        metadata: [],
+        tensors: [
+          {
+            name: "misaligned",
+            shape: [16n],
+            typeId: 2,
+            relativeOffset: 0,
+            data: new Uint8Array(18)
+          }
+        ]
+      });
+
+      await expect(
+        new GgufParser().parse(new MemorySource("misaligned.gguf", bytes))
+      ).rejects.toThrow(/row length 16 is not divisible by block size 32/);
+    });
   it("parses swapped big-endian GGUF v2 files and samples F16 tensors", async () => {
     const { bytes, dataRegionStart } = buildGguf({
       littleEndian: false,

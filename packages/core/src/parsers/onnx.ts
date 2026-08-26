@@ -37,7 +37,10 @@ const ONNX_DATA_TYPE_NAMES: Record<number, string> = {
   20: "FLOAT8E5M2FNUZ",
   21: "UINT4",
   22: "INT4",
-  23: "FLOAT4E2M1"
+  23: "FLOAT4E2M1",
+  24: "FLOAT8E8M0",
+  25: "UINT2",
+  26: "INT2"
 };
 
 const ONNX_DATA_LOCATION_NAMES: Record<number, string> = {
