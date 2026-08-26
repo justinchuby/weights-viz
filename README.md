@@ -42,6 +42,8 @@ In VS Code the viewer never relies on an HTML file input. **Open files** and
 Paste a public model URL into the web app or run **Weights Viz: Open Model URL**
 in VS Code.
 
+- Share a web visualization by passing the model URL as `?url=...`; the app
+  loads it automatically and keeps successful URL loads in the address bar.
 - GGUF and SafeTensors are read with progressive HTTP Range requests. Only the
   header, tensor directory, and explicitly requested sample ranges are fetched.
 - Hugging Face `.../blob/...` file-page links are converted automatically to

@@ -12,7 +12,10 @@ function App() {
   const [models, setModels] = useState<ParsedModel[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [workerReady, setWorkerReady] = useState(false);
+  const [sharedUrl] = useState(modelUrlFromQuery);
   const workerRef = useRef<Worker | null>(null);
+  const sharedUrlHandled = useRef(false);
   const nextId = useRef(1);
   const pending = useRef(
     new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
@@ -30,7 +33,11 @@ function App() {
       else request.reject(new Error(event.data.error ?? "Worker operation failed"));
     };
     workerRef.current = worker;
-    return () => worker.terminate();
+    setWorkerReady(true);
+    return () => {
+      worker.terminate();
+      if (workerRef.current === worker) workerRef.current = null;
+    };
   }, []);
 
   const request = <T,>(payload: WorkerRequest): Promise<T> =>
@@ -67,12 +74,21 @@ function App() {
     try {
       const loaded = await request<ParsedModel[]>({ type: "url", url });
       setModels((current) => [...current, ...loaded]);
+      const pageUrl = new URL(window.location.href);
+      pageUrl.searchParams.set("url", url);
+      window.history.replaceState(null, "", pageUrl);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!workerReady || !sharedUrl || sharedUrlHandled.current) return;
+    sharedUrlHandled.current = true;
+    void loadUrl(sharedUrl);
+  }, [workerReady, sharedUrl]);
 
   useEffect(() => {
     const prevent = (event: DragEvent) => event.preventDefault();
@@ -102,6 +118,7 @@ function App() {
         models={models}
         busy={busy}
         {...(error ? { error } : {})}
+        {...(sharedUrl ? { defaultUrl: sharedUrl } : {})}
         onFilesSelected={(files) => void loadFiles(files)}
         onOpenUrl={(url) => void loadUrl(url)}
         onSample={(tensor) =>
@@ -110,6 +127,11 @@ function App() {
       />
     </>
   );
+}
+
+function modelUrlFromQuery(): string | undefined {
+  const value = new URLSearchParams(window.location.search).get("url")?.trim();
+  return value ? new URL(value, window.location.href).toString() : undefined;
 }
 
 createRoot(document.getElementById("root")!).render(

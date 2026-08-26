@@ -23,6 +23,7 @@ interface WeightsExplorerProps {
   onFilesSelected?: (files: File[]) => void;
   onOpenUrl?: (url: string) => void;
   onSample?: (tensor: TensorRecord) => Promise<TensorSample>;
+  defaultUrl?: string;
   intro?: string;
   compact?: boolean;
 }
@@ -65,6 +66,7 @@ export function WeightsExplorer({
   onFilesSelected,
   onOpenUrl,
   onSample,
+  defaultUrl = "",
   intro,
   compact = false
 }: WeightsExplorerProps) {
@@ -72,7 +74,7 @@ export function WeightsExplorer({
   const [selected, setSelected] = useState<TensorRecord>();
   const [sample, setSample] = useState<TensorSample>();
   const [sampleError, setSampleError] = useState<string>();
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(defaultUrl);
   const [query, setQuery] = useState("");
   const [inspectorMode, setInspectorMode] = useState<"metadata" | "tensor">("metadata");
   const [metadataFileId, setMetadataFileId] = useState<string>();
