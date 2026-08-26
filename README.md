@@ -144,5 +144,5 @@ tokenizer configuration.
 ## Credits
 
 Designed and built collaboratively by
-[Justin Chuby](https://github.com/justinchuby) and
+[Justin Chu](https://github.com/justinchuby) and
 [GitHub Copilot](https://github.com/features/copilot).
