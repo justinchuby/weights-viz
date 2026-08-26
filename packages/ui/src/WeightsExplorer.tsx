@@ -668,7 +668,7 @@ function drawAddressMap(
           ? theme.metadata
           : colorForTensor(span.tensor!, dtypeColors, () => colorIndex++);
       context.fillStyle = color;
-      context.globalAlpha = span.kind === "metadata" ? 0.85 : 0.72;
+      context.globalAlpha = span.kind === "metadata" ? 0.92 : 0.88;
       for (const rect of span.rects) {
         if (!isVisible(rect, visibleTop, visibleBottom)) continue;
         context.fillRect(rect.x, rect.y, rect.width, rect.height);
@@ -677,7 +677,7 @@ function drawAddressMap(
     context.globalAlpha = 1;
 
     context.strokeStyle = theme.accent;
-    context.globalAlpha = 0.16;
+    context.globalAlpha = 0.28;
     context.lineWidth = 1 / zoom;
     for (let column = 0; column <= fileLayout.columns; column++) {
       const x =
