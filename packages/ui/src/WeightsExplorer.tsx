@@ -24,6 +24,7 @@ interface WeightsExplorerProps {
   onOpenUrl?: (url: string) => void;
   onSample?: (tensor: TensorRecord) => Promise<TensorSample>;
   intro?: string;
+  compact?: boolean;
 }
 
 interface HoverInfo {
@@ -64,7 +65,8 @@ export function WeightsExplorer({
   onFilesSelected,
   onOpenUrl,
   onSample,
-  intro
+  intro,
+  compact = false
 }: WeightsExplorerProps) {
   const [activeModelId, setActiveModelId] = useState<string>();
   const [selected, setSelected] = useState<TensorRecord>();
@@ -104,8 +106,8 @@ export function WeightsExplorer({
   };
 
   return (
-    <main className="wv-shell">
-      <header className="wv-header">
+    <main className={`wv-shell${compact ? " compact" : ""}`}>
+      {!compact && <header className="wv-header">
         <div>
           <div className="wv-kicker">LOCAL-FIRST MODEL INSPECTOR</div>
           <h1>Weights <span>Viz</span></h1>
@@ -139,7 +141,7 @@ export function WeightsExplorer({
             </form>
           )}
         </div>
-      </header>
+      </header>}
 
       {error && <div className="wv-alert error">{error}</div>}
       {pickerBlocked && (
@@ -185,59 +187,46 @@ export function WeightsExplorer({
         </section>
       ) : (
         <section className="wv-workspace">
-          <aside className="wv-sidebar">
-            <label className="wv-label">Models</label>
-            <div className="wv-model-list">
-              {models.map((model) => (
-                <button
-                  key={model.id}
-                  className={model.id === activeModel.id ? "active" : ""}
-                  onClick={() => setActiveModelId(model.id)}
-                >
-                  <span>{model.name}</span>
-                  <small>{model.files.length} file{model.files.length === 1 ? "" : "s"}</small>
-                </button>
-              ))}
-            </div>
-            <label className="wv-label" htmlFor="tensor-filter">Filter tensors</label>
-            <input
-              id="tensor-filter"
-              className="wv-filter"
-              placeholder="name or dtype"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            <div className="wv-summary">
-              <SummaryRow label="Files" value={String(activeModel.files.length)} />
-              <SummaryRow
-                label="Tensors"
-                value={String(activeModel.files.reduce((sum, file) => sum + file.tensors.length, 0))}
-              />
-              <SummaryRow
-                label="Total size"
-                value={formatBytes(activeModel.files.reduce((sum, file) => sum + file.size, 0n))}
-              />
-            </div>
-            <div className="wv-legend">
-              <label className="wv-label">Data types</label>
-              {[...new Set(activeModel.files.flatMap((file) => file.tensors.map((tensor) => tensor.dtype)))]
-                .slice(0, 8)
-                .map((dtype, index) => (
-                  <span key={dtype}>
-                    <i style={{ background: PALETTE[index % PALETTE.length] }} />
-                    {dtype}
-                  </span>
-                ))}
-            </div>
-          </aside>
-
           <div className="wv-map-panel">
             <div className="wv-panel-title">
               <div>
                 <span>BYTE MAP</span>
-                <h2>{activeModel.name}</h2>
+                {models.length > 1 ? (
+                  <select
+                    className="wv-model-select"
+                    aria-label="Active model"
+                    value={activeModel.id}
+                    onChange={(event) => setActiveModelId(event.target.value)}
+                  >
+                    {models.map((model) => (
+                      <option key={model.id} value={model.id}>{model.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <h2>{activeModel.name}</h2>
+                )}
               </div>
               <p>Addresses run left → right, top → bottom · drag to pan</p>
+            </div>
+            <div className="wv-map-toolbar">
+              <input
+                id="tensor-filter"
+                className="wv-filter"
+                aria-label="Filter tensors"
+                placeholder="Filter tensors by name or dtype"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <div className="wv-legend" aria-label="Data type legend">
+                {[...new Set(activeModel.files.flatMap((file) => file.tensors.map((tensor) => tensor.dtype)))]
+                  .slice(0, 8)
+                  .map((dtype, index) => (
+                    <span key={dtype}>
+                      <i style={{ background: PALETTE[index % PALETTE.length] }} />
+                      {dtype}
+                    </span>
+                  ))}
+              </div>
             </div>
             <WeightMap
               model={activeModel}
@@ -253,6 +242,32 @@ export function WeightsExplorer({
           </div>
 
           <aside className="wv-inspector">
+            <div className="wv-inspector-head">
+              <div>
+                <label className="wv-label">Model</label>
+                <h1>{activeModel.name}</h1>
+              </div>
+              {compact && (onChooseFiles || onFilesSelected) && (
+                onFilesSelected ? (
+                  <FilePicker onFilesSelected={onFilesSelected} onPickerResult={setPickerBlocked}>
+                    Open files
+                  </FilePicker>
+                ) : (
+                  <button className="wv-button" onClick={onChooseFiles}>Open files</button>
+                )
+              )}
+            </div>
+            <div className="wv-summary">
+              <SummaryRow label="Files" value={String(activeModel.files.length)} />
+              <SummaryRow
+                label="Tensors"
+                value={String(activeModel.files.reduce((sum, file) => sum + file.tensors.length, 0))}
+              />
+              <SummaryRow
+                label="Total size"
+                value={formatBytes(activeModel.files.reduce((sum, file) => sum + file.size, 0n))}
+              />
+            </div>
             <div className="wv-inspector-tabs">
               <button
                 className={inspectorMode === "metadata" ? "active" : ""}
@@ -376,6 +391,7 @@ function WeightMap({
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
+  const themeRevision = useThemeRevision();
   const layout = useMemo(
     () => {
       const needle = query.trim().toLowerCase();
@@ -426,15 +442,16 @@ function WeightMap({
     canvas.style.height = `${size.height}px`;
     const context = canvas.getContext("2d");
     if (!context) return;
+    const theme = readCanvasTheme(canvas);
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, size.width, size.height);
     context.save();
     context.translate(offset.x, offset.y);
     context.scale(zoom, zoom);
-    drawAddressMap(context, layout, selected, zoom, offset, size);
+    drawAddressMap(context, layout, selected, zoom, offset, size, theme);
     context.restore();
-    drawAddressRuler(context, layout, zoom, offset, size);
-  }, [layout, offset, selected, size, zoom]);
+    drawAddressRuler(context, layout, zoom, offset, size, theme);
+  }, [layout, offset, selected, size, themeRevision, zoom]);
 
   const hitTest = (clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -623,7 +640,8 @@ function drawAddressMap(
   selected: TensorRecord | undefined,
   zoom: number,
   offset: { x: number; y: number },
-  viewport: { width: number; height: number }
+  viewport: { width: number; height: number },
+  theme: CanvasTheme
 ) {
   const dtypeColors = new Map<string, string>();
   let colorIndex = 0;
@@ -635,7 +653,7 @@ function drawAddressMap(
       fileLayout.gridY + fileLayout.rowCount * fileLayout.rowHeight;
     if (gridBottom < visibleTop || fileLayout.gridY > visibleBottom) continue;
 
-    context.fillStyle = "#0b1923";
+    context.fillStyle = theme.mapBackground;
     context.fillRect(
       fileLayout.gridX,
       fileLayout.gridY,
@@ -647,16 +665,19 @@ function drawAddressMap(
       if (!span.visible) continue;
       const color =
         span.kind === "metadata"
-          ? "#324b5a"
+          ? theme.metadata
           : colorForTensor(span.tensor!, dtypeColors, () => colorIndex++);
-      context.fillStyle = span.kind === "metadata" ? `${color}d8` : `${color}b8`;
+      context.fillStyle = color;
+      context.globalAlpha = span.kind === "metadata" ? 0.85 : 0.72;
       for (const rect of span.rects) {
         if (!isVisible(rect, visibleTop, visibleBottom)) continue;
         context.fillRect(rect.x, rect.y, rect.width, rect.height);
       }
     }
+    context.globalAlpha = 1;
 
-    context.strokeStyle = "rgba(110, 231, 255, .14)";
+    context.strokeStyle = theme.accent;
+    context.globalAlpha = 0.16;
     context.lineWidth = 1 / zoom;
     for (let column = 0; column <= fileLayout.columns; column++) {
       const x =
@@ -676,11 +697,12 @@ function drawAddressMap(
         context.stroke();
       }
     }
+    context.globalAlpha = 1;
 
     for (const span of fileLayout.spans) {
       if (!span.tensor || !span.visible) continue;
       if (selected?.id === span.tensor.id) {
-        context.strokeStyle = "#ffffff";
+        context.strokeStyle = theme.selection;
         context.lineWidth = 2 / zoom;
         for (const rect of span.rects) {
           if (isVisible(rect, visibleTop, visibleBottom)) {
@@ -694,7 +716,8 @@ function drawAddressMap(
         span.rects,
         zoom,
         visibleTop,
-        visibleBottom
+        visibleBottom,
+        theme
       );
     }
   }
@@ -705,12 +728,13 @@ function drawAddressRuler(
   layout: AddressMapLayout,
   zoom: number,
   offset: { x: number; y: number },
-  viewport: { width: number; height: number }
+  viewport: { width: number; height: number },
+  theme: CanvasTheme
 ) {
   context.save();
-  context.fillStyle = "rgba(7, 16, 25, .94)";
+  context.fillStyle = theme.surface;
   context.fillRect(0, 0, 104, viewport.height);
-  context.strokeStyle = "#1e303d";
+  context.strokeStyle = theme.border;
   context.beginPath();
   context.moveTo(103.5, 0);
   context.lineTo(103.5, viewport.height);
@@ -720,10 +744,10 @@ function drawAddressRuler(
   for (const fileLayout of layout.files) {
     const headerY = offset.y + (fileLayout.gridY - 15) * zoom;
     if (headerY > -20 && headerY < viewport.height + 20) {
-      context.fillStyle = "#d8e3ec";
+      context.fillStyle = theme.text;
       context.font = "600 11px ui-monospace, monospace";
       context.fillText(fileLayout.file.name, 8, headerY, viewport.width - 16);
-      context.fillStyle = "#688091";
+      context.fillStyle = theme.muted;
       context.font = "9px ui-monospace, monospace";
       context.fillText(
         `${formatBytes(fileLayout.bytesPerRow)} / row`,
@@ -732,7 +756,7 @@ function drawAddressRuler(
       );
     }
 
-    context.fillStyle = "#7890a0";
+    context.fillStyle = theme.muted;
     context.font = "9px ui-monospace, monospace";
     for (let row = 0; row < fileLayout.rowCount; row++) {
       const y =
@@ -757,7 +781,8 @@ function drawTensorLabel(
   rects: AddressRect[],
   zoom: number,
   visibleTop: number,
-  visibleBottom: number
+  visibleBottom: number,
+  theme: CanvasTheme
 ) {
   const rect = rects
     .filter((candidate) => isVisible(candidate, visibleTop, visibleBottom))
@@ -766,7 +791,7 @@ function drawTensorLabel(
 
   const fontSize = 11 / zoom;
   const padding = 6 / zoom;
-  context.fillStyle = "#071019";
+  context.fillStyle = theme.labelText;
   context.font = `600 ${fontSize}px ui-monospace, monospace`;
   context.textBaseline = "top";
   context.fillText(
@@ -784,6 +809,54 @@ function drawTensorLabel(
       rect.width - padding * 2
     );
   }
+}
+
+interface CanvasTheme {
+  mapBackground: string;
+  surface: string;
+  metadata: string;
+  text: string;
+  muted: string;
+  border: string;
+  accent: string;
+  selection: string;
+  labelText: string;
+}
+
+function readCanvasTheme(canvas: HTMLCanvasElement): CanvasTheme {
+  const styles = getComputedStyle(canvas);
+  const read = (name: string, fallback: string) =>
+    styles.getPropertyValue(name).trim() || fallback;
+  return {
+    mapBackground: read("--wv-map-bg", "#0b1923"),
+    surface: read("--wv-surface", "#09141d"),
+    metadata: read("--wv-surface-raised", "#324b5a"),
+    text: read("--wv-text", "#e6f0f6"),
+    muted: read("--wv-muted", "#9db2bf"),
+    border: read("--wv-border", "#29404f"),
+    accent: read("--wv-accent", "#6ee7ff"),
+    selection: read("--wv-text", "#ffffff"),
+    labelText: "#071019"
+  };
+}
+
+function useThemeRevision(): number {
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setRevision((value) => value + 1);
+    media.addEventListener("change", update);
+    const observer = new MutationObserver(update);
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ["class", "style"]
+    });
+    return () => {
+      media.removeEventListener("change", update);
+      observer.disconnect();
+    };
+  }, []);
+  return revision;
 }
 
 function colorForTensor(
