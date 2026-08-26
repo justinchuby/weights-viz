@@ -79,6 +79,7 @@ class WeightsEditorProvider implements vscode.CustomReadonlyEditorProvider<Weigh
     panel: vscode.WebviewPanel
   ): Promise<void> {
     const sources = new Map<string, RandomAccessSource>();
+    panel.title = fileName(document.uri);
     panel.webview.options = {
       enableScripts: true,
       localResourceRoots: [
@@ -182,6 +183,23 @@ async function pickModelFiles(): Promise<vscode.Uri[]> {
   return picked ?? [];
 }
 
+function fileName(uri: vscode.Uri): string {
+  return path.posix.basename(uri.path) || "Weights Viz";
+}
+
+function fileSelectionTitle(uris: vscode.Uri[]): string {
+  const first = fileName(uris[0]!);
+  return uris.length === 1 ? first : `${first} (+${uris.length - 1})`;
+}
+
+function remoteModelTitle(rawUrl: string): string {
+  try {
+    return path.posix.basename(new URL(rawUrl).pathname) || "Remote model";
+  } catch {
+    return "Remote model";
+  }
+}
+
 async function collectSources(uris: vscode.Uri[]): Promise<RandomAccessSource[]> {
   const collected = new Map<string, RandomAccessSource>();
   for (const uri of uris) {
@@ -282,7 +300,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("weightsViz.openFiles", async () => {
       const picked = await pickModelFiles();
       if (!picked.length) return;
-      const panel = createPanel("Weights Viz: Model files");
+      const panel = createPanel(fileSelectionTitle(picked));
       const sources = new Map<string, RandomAccessSource>();
       const connection = connectPanel(panel, sources, provider.parsers, async () => {
         const opened = await collectSources(picked);
@@ -319,7 +337,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       });
       if (!url) return;
-      const panel = createPanel("Weights Viz: Remote model");
+      const panel = createPanel(remoteModelTitle(url));
       const sources = new Map<string, RandomAccessSource>();
       const connection = connectPanel(panel, sources, provider.parsers, async () => {
         return loadModelUrl(url, undefined, (source) => {

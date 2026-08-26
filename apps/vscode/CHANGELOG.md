@@ -19,6 +19,7 @@
   referenced `.data` files.
 - Keep the Canvas and inspector within the VS Code webview when its width or
   height shrinks.
+- Show the opened model filename in VS Code editor tab titles.
 
 ## 0.1.0
 
