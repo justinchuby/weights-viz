@@ -4,6 +4,8 @@ A local-first byte map for model weights. Open a GGUF, SafeTensors, or ONNX
 model and explore its files, tensors, data types, shapes, byte ranges, and
 sampled values without loading the whole model into memory.
 
+**Live app:** https://www.justinchuby.com/weights-viz/
+
 The project ships the same React visualization in two hosts:
 
 - A static Vite web app with drag-and-drop, multi-file selection, and URL input.
