@@ -67,6 +67,15 @@ pnpm build
 The static site is emitted to `apps/web/dist`. The extension bundle and its
 webview are emitted to `apps/vscode/dist`.
 
+Create an installable VSIX:
+
+```sh
+pnpm package:vscode
+```
+
+Pushes to `main` deploy the static app through GitHub Pages. Version tags such
+as `v0.1.0` create a GitHub release containing the VSIX.
+
 ## Performance and safety
 
 Offsets and lengths use `bigint`, so multi-gigabyte files retain exact

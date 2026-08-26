@@ -5,6 +5,7 @@
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm --filter @weights-viz/web dev",
+    "package:vscode": "pnpm --filter weights-viz package",
     "test": "vitest run",
     "typecheck": "pnpm -r typecheck"
   },

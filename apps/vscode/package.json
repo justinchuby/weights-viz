@@ -6,6 +6,22 @@
   "private": true,
   "type": "module",
   "publisher": "justinchuby",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/justinchuby/weights-viz.git"
+  },
+  "homepage": "https://github.com/justinchuby/weights-viz#readme",
+  "bugs": {
+    "url": "https://github.com/justinchuby/weights-viz/issues"
+  },
+  "keywords": [
+    "gguf",
+    "safetensors",
+    "onnx",
+    "machine-learning",
+    "visualization"
+  ],
   "engines": {
     "vscode": "^1.95.0"
   },
@@ -36,6 +52,7 @@
   "scripts": {
     "build": "pnpm run build:webview && esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs",
     "build:webview": "vite build",
+    "package": "pnpm run build && vsce package --no-dependencies --out dist/weights-viz.vsix",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
@@ -50,6 +67,7 @@
     "@types/react": "^19.1.11",
     "@types/react-dom": "^19.1.7",
     "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.6.0",
     "esbuild": "^0.25.9"
   }
 }
