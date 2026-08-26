@@ -218,7 +218,7 @@ export function WeightsExplorer({
                   <h2>{activeModel.name}</h2>
                 )}
               </div>
-              <p>Addresses run left → right, top → bottom · drag to pan</p>
+              <p>Wheel to scroll · pinch or Ctrl/⌘ + wheel to zoom · drag to pan</p>
             </div>
             <div className="wv-map-toolbar">
               <input
@@ -401,6 +401,7 @@ function WeightMap({
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [hover, setHover] = useState<HoverInfo>();
   const [zoom, setZoom] = useState(1);
+  const [resolutionStep, setResolutionStep] = useState(0);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const themeRevision = useThemeRevision();
@@ -414,10 +415,11 @@ function WeightMap({
           ? (tensor) =>
               tensor.name.toLowerCase().includes(needle) ||
               tensor.dtype.toLowerCase().includes(needle)
-          : undefined
+          : undefined,
+        resolutionStep
       );
     },
-    [model, query, size.width]
+    [model, query, resolutionStep, size.width]
   );
 
   useEffect(() => {
@@ -437,6 +439,7 @@ function WeightMap({
 
   useEffect(() => {
     setZoom(1);
+    setResolutionStep(0);
     setOffset({ x: 0, y: 0 });
   }, [model.id]);
 
@@ -489,12 +492,33 @@ function WeightMap({
     if (!canvas) return;
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      setZoomAt(
-        zoom * (event.deltaY < 0 ? 1.18 : 0.85),
-        event.clientX - rect.left,
-        event.clientY - rect.top
+      if (event.ctrlKey || event.metaKey) {
+        const rect = canvas.getBoundingClientRect();
+        setZoomAt(
+          zoom * (event.deltaY < 0 ? 1.18 : 0.85),
+          event.clientX - rect.left,
+          event.clientY - rect.top
+        );
+        return;
+      }
+      const deltaScale =
+        event.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? 16
+          : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? size.height
+            : 1;
+      setOffset((current) =>
+        clampOffset(
+          {
+            x: current.x - event.deltaX * deltaScale,
+            y: current.y - event.deltaY * deltaScale
+          },
+          layout,
+          size,
+          zoom
+        )
       );
+      setHover(undefined);
     };
     canvas.addEventListener("wheel", handleWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", handleWheel);
@@ -574,27 +598,49 @@ function WeightMap({
         offset={offset}
         viewport={size}
       />
-      <div className="wv-zoom">
-        <button
-          aria-label="Zoom out"
-          onClick={() => setZoomAt(zoom / 1.4, size.width / 2, size.height / 2)}
-        >
-          −
-        </button>
-        <span>{Math.round(zoom * 100)}%</span>
-        <button
-          aria-label="Zoom in"
-          onClick={() => setZoomAt(zoom * 1.4, size.width / 2, size.height / 2)}
-        >
-          +
-        </button>
-        <button
-          aria-label="Reset view"
-          onClick={() => {
-            setZoom(1);
-            setOffset({ x: 0, y: 0 });
-          }}
-        >↺</button>
+      <div className="wv-view-controls">
+        <div className="wv-resolution">
+          <button
+            aria-label="Finer resolution"
+            disabled={resolutionStep <= -2}
+            onClick={() => setResolutionStep((current) => Math.max(-2, current - 1))}
+          >
+            −
+          </button>
+          <span title="Shared resolution for every file">
+            {formatBytes(layout.bytesPerCell)} / cell
+          </span>
+          <button
+            aria-label="Coarser resolution"
+            disabled={resolutionStep >= 8}
+            onClick={() => setResolutionStep((current) => Math.min(8, current + 1))}
+          >
+            +
+          </button>
+        </div>
+        <div className="wv-zoom">
+          <button
+            aria-label="Zoom out"
+            onClick={() => setZoomAt(zoom / 1.4, size.width / 2, size.height / 2)}
+          >
+            −
+          </button>
+          <span>{Math.round(zoom * 100)}%</span>
+          <button
+            aria-label="Zoom in"
+            onClick={() => setZoomAt(zoom * 1.4, size.width / 2, size.height / 2)}
+          >
+            +
+          </button>
+          <button
+            aria-label="Reset view"
+            onClick={() => {
+              setZoom(1);
+              setResolutionStep(0);
+              setOffset({ x: 0, y: 0 });
+            }}
+          >↺</button>
+        </div>
       </div>
       {hover && (
         <div
@@ -764,15 +810,6 @@ function drawAddressMap(
         }
       }
       context.globalAlpha = 1;
-      if (selected?.id === span.tensor.id) {
-        context.strokeStyle = theme.selection;
-        context.lineWidth = 2 / zoom;
-        for (const rect of span.rects) {
-          if (isVisible(rect, visibleTop, visibleBottom)) {
-            context.strokeRect(rect.x, rect.y, rect.width, rect.height);
-          }
-        }
-      }
       drawTensorLabel(
         context,
         span.tensor,
@@ -782,6 +819,19 @@ function drawAddressMap(
         visibleBottom,
         theme
       );
+    }
+
+    const selectedSpan = fileLayout.spans.find(
+      (span) => span.visible && span.tensor?.id === selected?.id
+    );
+    if (selectedSpan) {
+      context.strokeStyle = theme.selection;
+      context.lineWidth = 2 / zoom;
+      for (const rect of selectedSpan.rects) {
+        if (isVisible(rect, visibleTop, visibleBottom)) {
+          context.strokeRect(rect.x, rect.y, rect.width, rect.height);
+        }
+      }
     }
   }
 }

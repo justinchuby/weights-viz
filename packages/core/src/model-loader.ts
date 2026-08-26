@@ -15,6 +15,7 @@ import { OnnxParser } from "./parsers/onnx";
 import { SafeTensorsParser } from "./parsers/safetensors";
 import {
   REMOTE_ONNX_MAX_BYTES,
+  SAFETENSORS_INDEX_MAX_BYTES,
   type ParsedFile,
   type ParsedModel,
   type Parser,
@@ -177,8 +178,8 @@ async function loadSafeTensorsIndex(
   candidates: Map<string, RandomAccessSource>,
   signal?: AbortSignal
 ): Promise<ParsedModel> {
-  if (indexSource.size > 16n * 1024n * 1024n) {
-    throw new ParseError("SafeTensors index exceeds the 16 MiB limit");
+  if (indexSource.size > BigInt(SAFETENSORS_INDEX_MAX_BYTES)) {
+    throw new ParseError("SafeTensors index exceeds the 64 MiB limit");
   }
   const bytes = await indexSource.read(
     0n,
@@ -223,11 +224,15 @@ async function loadRemoteSafeTensorsIndex(
   if (!response.ok) {
     throw new ParseError(`Unable to fetch SafeTensors index: HTTP ${response.status}`);
   }
-  const bytes = await readResponseCapped(response, 16 * 1024 * 1024, "SafeTensors index");
+  const bytes = await readResponseCapped(
+    response,
+    SAFETENSORS_INDEX_MAX_BYTES,
+    "SafeTensors index"
+  );
   const index = parseSafeTensorsIndex(bytes);
   const shardNames = orderedShardNames(index.weight_map);
   const files: ParsedFile[] = [];
-  const concurrency = 4;
+  const concurrency = 8;
   for (let index = 0; index < shardNames.length; index += concurrency) {
     const outcomes = await Promise.allSettled(
       shardNames.slice(index, index + concurrency).map(async (shardName) => {

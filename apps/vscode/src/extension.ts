@@ -9,6 +9,7 @@ import {
   onnxExternalLocations,
   OnnxParser,
   SafeTensorsParser,
+  SAFETENSORS_INDEX_MAX_BYTES,
   type Parser,
   type RandomAccessSource,
   type TensorRecord,
@@ -204,8 +205,8 @@ async function discoverSources(uri: vscode.Uri): Promise<RandomAccessSource[]> {
   if (!primary.name.toLowerCase().endsWith(".safetensors.index.json")) {
     return [primary];
   }
-  if (primary.size > 16n * 1024n * 1024n) {
-    throw new Error("SafeTensors index exceeds 16 MiB");
+  if (primary.size > BigInt(SAFETENSORS_INDEX_MAX_BYTES)) {
+    throw new Error("SafeTensors index exceeds 64 MiB");
   }
   const bytes = await primary.read(0n, Number(primary.size));
   const index = JSON.parse(new TextDecoder().decode(bytes)) as {

@@ -117,17 +117,18 @@ from a local filesystem.
 ## Current visualization model
 
 Each file is an independent linear address space. Addresses run left to right
-and then wrap onto the next row, with an adaptive power-of-two row capacity.
-The 64-column background grid is only an address scale: tensor fills retain
-their exact fractional start and end positions, can cross rows, and leave
-alignment gaps visible. Multiple files are stacked vertically instead of being
-assigned synthetic contiguous addresses.
+and then wrap onto the next row. Every file in a model uses the same adaptive
+power-of-two bytes-per-cell resolution, which can be adjusted from the
+bottom-right controls. The 64-column background grid is only an address scale:
+tensor fills retain their exact fractional start and end positions, can cross
+rows, and leave alignment gaps visible. Multiple files are stacked vertically
+instead of being assigned synthetic contiguous addresses.
 
 Hovering reports the exact pointer address and the surrounding tensor,
 metadata, or unmapped range. Drag the map with the primary pointer button to
-pan; wheel zoom remains centered under the pointer. Selecting a tensor opens
-its shape, storage, exact addresses, and value-sampling controls in the
-inspector.
+pan. A wheel or two-finger trackpad gesture scrolls the map; trackpad pinch or
+Ctrl/Cmd + wheel zooms around the pointer. Selecting a tensor opens its shape,
+storage, exact addresses, and value-sampling controls in the inspector.
 The Metadata tab exposes file-level model metadata, including searchable GGUF
 KV entries such as architecture, model name, quantization details, and
 tokenizer configuration.

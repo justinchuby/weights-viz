@@ -20,7 +20,9 @@ describe("HttpRangeSource", () => {
   it("probes the length and validates ranged reads", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(rangeResponse(new Uint8Array([0]), "bytes 0-0", 10))
+      .mockResolvedValueOnce(
+        rangeResponse(new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]), "bytes 0-7", 10)
+      )
       .mockResolvedValueOnce(
         rangeResponse(new Uint8Array([2, 3, 4]), "bytes 2-4", 10)
       );
@@ -29,6 +31,7 @@ describe("HttpRangeSource", () => {
     });
 
     expect(source.size).toBe(10n);
+    expect(await source.read(0n, 8)).toEqual(new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]));
     expect(await source.read(2n, 3)).toEqual(new Uint8Array([2, 3, 4]));
     expect(fetcher).toHaveBeenLastCalledWith(
       "https://example.test/model.gguf",
@@ -46,7 +49,9 @@ describe("HttpRangeSource", () => {
   it("rejects inconsistent Content-Range responses", async () => {
     const fetcher = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(rangeResponse(new Uint8Array([0]), "bytes 0-0", 10))
+      .mockResolvedValueOnce(
+        rangeResponse(new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7]), "bytes 0-7", 10)
+      )
       .mockResolvedValueOnce(
         rangeResponse(new Uint8Array([2, 3]), "bytes 1-2", 10)
       );

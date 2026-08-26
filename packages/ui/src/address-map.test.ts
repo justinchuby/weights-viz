@@ -96,8 +96,27 @@ describe("address map", () => {
       layout.files[0]!.gridY +
         layout.files[0]!.rowCount * layout.files[0]!.rowHeight
     );
-    expect(layout.files[0]!.bytesPerRow).toBe(4n * 1024n ** 2n);
+    expect(layout.files[0]!.bytesPerRow).toBe(64n * 1024n ** 3n);
     expect(layout.files[1]!.bytesPerRow).toBe(64n * 1024n ** 3n);
+    expect(layout.files[0]!.bytesPerCell).toBe(layout.files[1]!.bytesPerCell);
+  });
+
+  it("applies one adjustable resolution across every file", () => {
+    const model = {
+      id: "model",
+      name: "model",
+      diagnostics: [],
+      files: [
+        makeFile("small", 100n * 1024n ** 2n, []),
+        makeFile("large", 10n * 1024n ** 3n, [])
+      ]
+    };
+    const automatic = createAddressMapLayout(model, 1132);
+    const finer = createAddressMapLayout(model, 1132, undefined, -1);
+
+    expect(automatic.files[0]!.bytesPerCell).toBe(automatic.files[1]!.bytesPerCell);
+    expect(finer.files[0]!.bytesPerCell).toBe(finer.files[1]!.bytesPerCell);
+    expect(finer.bytesPerCell).toBe(automatic.bytesPerCell / 2n);
   });
 
   it("filters tensors without extending the metadata range", () => {

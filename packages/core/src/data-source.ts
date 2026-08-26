@@ -76,7 +76,7 @@ export class HttpRangeSource implements RandomAccessSource {
     let response: Response;
     try {
       response = await fetcher(url, {
-        headers: { Range: "bytes=0-0" },
+        headers: { Range: "bytes=0-7" },
         mode: "cors",
         credentials: "omit",
         ...(options.signal ? { signal: options.signal } : {})
@@ -100,11 +100,21 @@ export class HttpRangeSource implements RandomAccessSource {
       );
     }
     const contentRange = response.headers.get("content-range");
-    const match = /^bytes 0-0\/(\d+)$/.exec(contentRange ?? "");
-    if (!match?.[1]) {
+    const match = /^bytes 0-(\d+)\/(\d+)$/.exec(contentRange ?? "");
+    const probeEnd = Number(match?.[1]);
+    const totalSize = match?.[2];
+    if (!totalSize || !Number.isInteger(probeEnd) || probeEnd < 0 || probeEnd > 7) {
       throw new ParseError("Server returned an invalid or hidden Content-Range header");
     }
-    return new HttpRangeSource(url, BigInt(match[1]), fetcher);
+    const probe = new Uint8Array(await response.arrayBuffer());
+    if (probe.byteLength !== probeEnd + 1) {
+      throw new ParseError(
+        `Expected ${probeEnd + 1} probe bytes, received ${probe.byteLength}`
+      );
+    }
+    const source = new HttpRangeSource(url, BigInt(totalSize), fetcher);
+    source.cache.set(`0:${probe.byteLength}`, probe);
+    return source;
   }
 
   async read(

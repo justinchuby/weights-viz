@@ -76,3 +76,4 @@ export interface RandomAccessSource {
 
 export const DEFAULT_MAX_METADATA_BYTES = 64 * 1024 * 1024;
 export const REMOTE_ONNX_MAX_BYTES = 50 * 1024 * 1024;
+export const SAFETENSORS_INDEX_MAX_BYTES = 64 * 1024 * 1024;

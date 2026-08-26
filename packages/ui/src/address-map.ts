@@ -43,6 +43,7 @@ export interface AddressFileLayout {
 
 export interface AddressMapLayout {
   files: AddressFileLayout[];
+  bytesPerCell: bigint;
   width: number;
   contentHeight: number;
 }
@@ -62,17 +63,25 @@ export interface AddressHit {
 export function createAddressMapLayout(
   model: ParsedModel,
   width: number,
-  includeTensor: (tensor: TensorRecord) => boolean = () => true
+  includeTensor: (tensor: TensorRecord) => boolean = () => true,
+  resolutionStep = 0
 ): AddressMapLayout {
   const columns =
     width < 700 ? NARROW_ADDRESS_GRID_COLUMNS : ADDRESS_GRID_COLUMNS;
   const gridWidth = Math.max(columns, width - GUTTER_WIDTH - RIGHT_PADDING);
   const rowHeight = gridWidth / columns;
+  const largestFileSize = model.files.reduce(
+    (largest, file) => maxBigInt(largest, file.size),
+    0n
+  );
+  const bytesPerCell = scaleBytesPerCell(
+    chooseBytesPerCell(largestFileSize, columns),
+    resolutionStep
+  );
   const files: AddressFileLayout[] = [];
   let y = TOP_PADDING;
 
   for (const file of model.files) {
-    const bytesPerCell = chooseBytesPerCell(file.size, columns);
     const bytesPerRow = bytesPerCell * BigInt(columns);
     const rowCount = Math.max(1, Number(ceilDiv(file.size, bytesPerRow)));
     const gridY = y + FILE_HEADER_HEIGHT;
@@ -96,6 +105,7 @@ export function createAddressMapLayout(
 
   return {
     files,
+    bytesPerCell,
     width,
     contentHeight: Math.max(y - FILE_GAP + TOP_PADDING, 1)
   };
@@ -109,6 +119,11 @@ export function chooseBytesPerCell(
   if (fileSize <= 0n) return 1n;
   const targetCells = BigInt(Math.max(1, columns * targetRows));
   return nextPowerOfTwo(ceilDiv(fileSize, targetCells));
+}
+
+function scaleBytesPerCell(bytesPerCell: bigint, step: number): bigint {
+  if (step >= 0) return bytesPerCell << BigInt(step);
+  return maxBigInt(1n, bytesPerCell >> BigInt(-step));
 }
 
 export function hitTestAddressMap(
