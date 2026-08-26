@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.1.2
+
+- Allow the final address row to scroll to the top of the map.
+- Add editor-style previous/next tensor search navigation.
+- Increase the default map resolution to approximately 128 rows per file.
+- Infer ONNX external-data layouts from the manifest without requiring the
+  referenced `.data` files.
+- Keep the Canvas and inspector within the VS Code webview when its width or
+  height shrinks.
+- Show the opened model filename in VS Code editor tab titles.
+
 ## 0.1.1
 
 - Add **Weights Viz: Open Model Files** and an in-viewer **Open files** button
@@ -13,13 +24,6 @@
 - Add unified multi-file resolution, stable dtype colors, semantic tensor-role
   shading, parameter counts, and responsive Canvas sizing.
 - Add wheel/pinch navigation and a synchronized vertical map scrollbar.
-- Add editor-style previous/next tensor search navigation.
-- Increase the default map resolution to approximately 128 rows per file.
-- Infer ONNX external-data layouts from the manifest without requiring the
-  referenced `.data` files.
-- Keep the Canvas and inspector within the VS Code webview when its width or
-  height shrinks.
-- Show the opened model filename in VS Code editor tab titles.
 
 ## 0.1.0
 
