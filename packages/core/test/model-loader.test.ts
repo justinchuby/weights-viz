@@ -27,8 +27,8 @@ describe("loadSources", () => {
         JSON.stringify({
           metadata: { total_size: 8 },
           weight_map: {
-            "layer.0": "model-00001-of-00002.safetensors",
-            "layer.1": "model-00002-of-00002.safetensors"
+            "layer.0": "model-00002-of-00002.safetensors",
+            "layer.1": "model-00001-of-00002.safetensors"
           }
         })
       )
@@ -41,6 +41,10 @@ describe("loadSources", () => {
 
     expect(models).toHaveLength(1);
     expect(models[0]?.files).toHaveLength(2);
+    expect(models[0]?.files.map((file) => file.name)).toEqual([
+      "model-00001-of-00002.safetensors",
+      "model-00002-of-00002.safetensors"
+    ]);
     expect(models[0]?.diagnostics).toEqual([]);
   });
 

@@ -186,7 +186,7 @@ async function loadSafeTensorsIndex(
     signal
   );
   const index = parseSafeTensorsIndex(bytes);
-  const shardNames = [...new Set(Object.values(index.weight_map))];
+  const shardNames = orderedShardNames(index.weight_map);
   const files: ParsedFile[] = [];
   const diagnostics = [];
   for (const shardName of shardNames) {
@@ -225,15 +225,27 @@ async function loadRemoteSafeTensorsIndex(
   }
   const bytes = await readResponseCapped(response, 16 * 1024 * 1024, "SafeTensors index");
   const index = parseSafeTensorsIndex(bytes);
-  const shardNames = [...new Set(Object.values(index.weight_map))];
+  const shardNames = orderedShardNames(index.weight_map);
   const files: ParsedFile[] = [];
-  for (const shardName of shardNames) {
-    const source = await HttpRangeSource.create(
-      new URL(shardName, url).toString(),
-      signal ? { signal } : {}
+  const concurrency = 4;
+  for (let index = 0; index < shardNames.length; index += concurrency) {
+    const outcomes = await Promise.allSettled(
+      shardNames.slice(index, index + concurrency).map(async (shardName) => {
+        const source = await HttpRangeSource.create(
+          new URL(shardName, url).toString(),
+          signal ? { signal } : {}
+        );
+        onSource?.(source);
+        return parsers.safetensors.parse(source, signal ? { signal } : {});
+      })
     );
-    onSource?.(source);
-    files.push(await parsers.safetensors.parse(source, signal ? { signal } : {}));
+    const failure = outcomes.find(
+      (outcome): outcome is PromiseRejectedResult => outcome.status === "rejected"
+    );
+    if (failure) throw failure.reason;
+    for (const outcome of outcomes) {
+      if (outcome.status === "fulfilled") files.push(outcome.value);
+    }
   }
   return {
     id: `model-url-${url}`,
@@ -242,6 +254,12 @@ async function loadRemoteSafeTensorsIndex(
     files,
     diagnostics: []
   };
+}
+
+function orderedShardNames(weightMap: Record<string, string>): string[] {
+  return [...new Set(Object.values(weightMap))].sort((left, right) =>
+    left.localeCompare(right, undefined, { numeric: true })
+  );
 }
 
 async function readResponseCapped(

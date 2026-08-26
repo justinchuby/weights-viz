@@ -179,16 +179,18 @@ export function WeightsExplorer({
           <div className="wv-empty-grid" />
           <div className="wv-empty-content">
             <div className="wv-file-mark">01</div>
-            <h2>See what your model is made of.</h2>
+            <h2>{busy ? "Loading model metadata…" : "See what your model is made of."}</h2>
             <p>
-              {intro ??
-                "Drop GGUF, SafeTensors, or ONNX files here. Files stay on this device; remote models use byte-range requests."}
+              {busy
+                ? "Reading file headers and tensor indexes. Large sharded models may take a moment."
+                : intro ??
+                  "Drop GGUF, SafeTensors, or ONNX files here. Files stay on this device; remote models use byte-range requests."}
             </p>
-            {onFilesSelected ? (
+            {!busy && onFilesSelected ? (
               <FilePicker large onFilesSelected={onFilesSelected} onPickerResult={setPickerBlocked}>
                 Choose model files
               </FilePicker>
-            ) : onChooseFiles ? (
+            ) : !busy && onChooseFiles ? (
               <button className="wv-button primary large" onClick={onChooseFiles}>
                 Choose model files
               </button>
