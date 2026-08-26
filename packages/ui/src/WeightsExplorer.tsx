@@ -19,6 +19,7 @@ import {
   formatParameterCount,
   formatShape
 } from "./format";
+import { colorForDtype } from "./dtype-color";
 import {
   classifyTensorRole,
   colorForTensorRole,
@@ -43,17 +44,6 @@ interface HoverInfo {
   clientX: number;
   clientY: number;
 }
-
-const PALETTE = [
-  "#6ee7ff",
-  "#9b8cff",
-  "#ff7ab6",
-  "#ffb45e",
-  "#69e6a6",
-  "#e6df69",
-  "#7aa7ff",
-  "#de8cff"
-];
 
 const CHOOSER_GRACE_MS = 1200;
 
@@ -242,9 +232,9 @@ export function WeightsExplorer({
               <div className="wv-legend" aria-label="Data type legend">
                 {[...new Set(activeModel.files.flatMap((file) => file.tensors.map((tensor) => tensor.dtype)))]
                   .slice(0, 8)
-                  .map((dtype, index) => (
+                  .map((dtype) => (
                     <span key={dtype}>
-                      <i style={{ background: PALETTE[index % PALETTE.length] }} />
+                      <i style={{ background: colorForDtype(dtype) }} />
                       {dtype}
                     </span>
                   ))}
@@ -472,8 +462,8 @@ function WeightMap({
     const ratio = Math.max(window.devicePixelRatio || 1, 2);
     canvas.width = Math.floor(size.width * ratio);
     canvas.height = Math.floor(size.height * ratio);
-    canvas.style.width = `${size.width}px`;
-    canvas.style.height = `${size.height}px`;
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
     const context = canvas.getContext("2d");
     if (!context) return;
     const theme = readCanvasTheme(canvas);
@@ -766,8 +756,6 @@ function drawAddressMap(
   theme: CanvasTheme,
   pixelRatio: number
 ) {
-  const dtypeColors = new Map<string, string>();
-  let colorIndex = 0;
   const visibleTop = -offset.y / zoom;
   const visibleBottom = (viewport.height - offset.y) / zoom;
 
@@ -789,7 +777,7 @@ function drawAddressMap(
       const color =
         span.kind === "metadata"
           ? theme.metadata
-          : colorForTensor(span.tensor!, dtypeColors, () => colorIndex++);
+          : colorForTensor(span.tensor!);
       context.fillStyle = color;
       context.globalAlpha = span.kind === "metadata" ? 0.92 : 0.88;
       for (const rect of span.rects) {
@@ -1088,16 +1076,12 @@ function useThemeRevision(): number {
 }
 
 function colorForTensor(
-  tensor: TensorRecord,
-  colors: Map<string, string>,
-  nextIndex: () => number
+  tensor: TensorRecord
 ): string {
-  let color = colors.get(tensor.dtype);
-  if (!color) {
-    color = PALETTE[nextIndex() % PALETTE.length] ?? "#6ee7ff";
-    colors.set(tensor.dtype, color);
-  }
-  return colorForTensorRole(color, classifyTensorRole(tensor.name));
+  return colorForTensorRole(
+    colorForDtype(tensor.dtype),
+    classifyTensorRole(tensor.name)
+  );
 }
 
 function isVisible(
