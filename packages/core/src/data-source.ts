@@ -1,0 +1,172 @@
+import { assertRange, ParseError } from "./errors";
+import type { RandomAccessSource } from "./types";
+
+let nextSourceId = 1;
+
+export class MemorySource implements RandomAccessSource {
+  readonly id: string;
+  readonly size: bigint;
+
+  constructor(
+    readonly name: string,
+    private readonly bytes: Uint8Array,
+    id?: string
+  ) {
+    this.id = id ?? `memory-${nextSourceId++}`;
+    this.size = BigInt(bytes.byteLength);
+  }
+
+  async read(offset: bigint, length: number): Promise<Uint8Array> {
+    assertRange(offset, BigInt(length), this.size, "Read");
+    const start = Number(offset);
+    return this.bytes.slice(start, start + length);
+  }
+}
+
+export class BrowserFileSource implements RandomAccessSource {
+  readonly id: string;
+  readonly size: bigint;
+
+  constructor(readonly file: File) {
+    this.id = `file-${nextSourceId++}`;
+    this.size = BigInt(file.size);
+  }
+
+  get name(): string {
+    return this.file.name;
+  }
+
+  async read(
+    offset: bigint,
+    length: number,
+    signal?: AbortSignal
+  ): Promise<Uint8Array> {
+    signal?.throwIfAborted();
+    assertRange(offset, BigInt(length), this.size, "Read");
+    const start = Number(offset);
+    const buffer = await this.file.slice(start, start + length).arrayBuffer();
+    signal?.throwIfAborted();
+    return new Uint8Array(buffer);
+  }
+}
+
+interface HttpSourceOptions {
+  fetch?: typeof globalThis.fetch;
+  signal?: AbortSignal;
+}
+
+export class HttpRangeSource implements RandomAccessSource {
+  readonly id: string;
+  readonly name: string;
+  readonly size: bigint;
+  readonly url: string;
+  private readonly fetcher: typeof globalThis.fetch;
+  private readonly cache = new Map<string, Uint8Array>();
+
+  private constructor(url: string, size: bigint, fetcher: typeof globalThis.fetch) {
+    this.id = `url-${nextSourceId++}`;
+    this.url = url;
+    this.name = decodeURIComponent(new URL(url).pathname.split("/").pop() || "remote");
+    this.size = size;
+    this.fetcher = fetcher;
+  }
+
+  static async create(url: string, options: HttpSourceOptions = {}): Promise<HttpRangeSource> {
+    const fetcher = options.fetch ?? globalThis.fetch;
+    const response = await fetcher(url, {
+      headers: { Range: "bytes=0-0" },
+      mode: "cors",
+      credentials: "omit",
+      ...(options.signal ? { signal: options.signal } : {})
+    });
+    if (response.status !== 206) {
+      throw new ParseError(
+        `Server must support CORS HTTP Range requests (expected 206, received ${response.status})`
+      );
+    }
+    const contentRange = response.headers.get("content-range");
+    const match = /^bytes 0-0\/(\d+)$/.exec(contentRange ?? "");
+    if (!match?.[1]) {
+      throw new ParseError("Server returned an invalid or hidden Content-Range header");
+    }
+    return new HttpRangeSource(url, BigInt(match[1]), fetcher);
+  }
+
+  async read(
+    offset: bigint,
+    length: number,
+    signal?: AbortSignal
+  ): Promise<Uint8Array> {
+    assertRange(offset, BigInt(length), this.size, "Remote read");
+    if (length === 0) return new Uint8Array();
+    const key = `${offset}:${length}`;
+    const cached = this.cache.get(key);
+    if (cached) return cached.slice();
+    const end = offset + BigInt(length) - 1n;
+    const response = await this.fetcher(this.url, {
+      headers: { Range: `bytes=${offset}-${end}` },
+      mode: "cors",
+      credentials: "omit",
+      ...(signal ? { signal } : {})
+    });
+    if (response.status !== 206) {
+      throw new ParseError(`Range request failed with HTTP ${response.status}`, offset);
+    }
+    const expected = `bytes ${offset}-${end}/${this.size}`;
+    if (response.headers.get("content-range") !== expected) {
+      throw new ParseError(
+        `Unexpected Content-Range: ${response.headers.get("content-range") ?? "missing"}`,
+        offset
+      );
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength !== length) {
+      throw new ParseError(`Expected ${length} bytes, received ${bytes.byteLength}`, offset);
+    }
+    if (this.cache.size >= 24) this.cache.delete(this.cache.keys().next().value as string);
+    this.cache.set(key, bytes);
+    return bytes.slice();
+  }
+}
+
+export async function fetchRemoteOnnx(
+  url: string,
+  maxBytes: number,
+  signal?: AbortSignal,
+  fetcher: typeof globalThis.fetch = globalThis.fetch
+): Promise<MemorySource> {
+  const response = await fetcher(url, {
+    mode: "cors",
+    credentials: "omit",
+    ...(signal ? { signal } : {})
+  });
+  if (!response.ok || !response.body) {
+    throw new ParseError(`Unable to download ONNX file: HTTP ${response.status}`);
+  }
+  const declared = response.headers.get("content-length");
+  if (declared && Number(declared) > maxBytes) {
+    await response.body.cancel();
+    throw new ParseError(`Remote ONNX exceeds the ${maxBytes} byte limit`);
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  while (true) {
+    const result = await reader.read();
+    if (result.done) break;
+    length += result.value.byteLength;
+    if (length > maxBytes) {
+      await reader.cancel();
+      throw new ParseError(`Remote ONNX exceeds the ${maxBytes} byte limit`);
+    }
+    chunks.push(result.value);
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const name = decodeURIComponent(new URL(url).pathname.split("/").pop() || "remote.onnx");
+  return new MemorySource(name, bytes);
+}
