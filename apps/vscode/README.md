@@ -6,7 +6,8 @@ Code.
 ## Features
 
 - Open model files with the **Weights Visualization** custom editor.
-- View a proportional Canvas byte map organized by file, tensor, and byte block.
+- View a Canvas byte map ordered by exact file address, with visible alignment
+  gaps and drag-to-pan navigation.
 - Inspect tensor names, shapes, dtypes, exact offsets, lengths, and storage.
 - Search file-level metadata, including GGUF model and tokenizer KV entries.
 - Sample values from SafeTensors and supported GGUF types on demand.
@@ -20,7 +21,18 @@ Code.
 VS Code webviews cannot open the browser file dialog, so the viewer asks the
 extension host for the native picker instead of using an HTML file input.
 
-Model files are parsed locally. Remote requests omit credentials.
+## Privacy
+
+- Local model files are parsed on your machine and are never uploaded.
+- The extension reads only files you explicitly open and SafeTensors shards
+  referenced by an index you open.
+- Parsed metadata and requested value samples pass only between the extension
+  host and its local VS Code webview.
+- The extension contains no telemetry, analytics, advertising, authentication,
+  or secret-storage integration.
+- Network requests occur only when you explicitly run **Open Model URL**.
+  Requests go to that URL (and referenced remote shards), use HTTP Range where
+  supported, and always omit credentials.
 
 See the [project README](https://github.com/justinchuby/weights-viz#readme) for
 the full support matrix and remote-server requirements.
