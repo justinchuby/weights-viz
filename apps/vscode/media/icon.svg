@@ -1,18 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect width="256" height="256" fill="#06131c"/>
-  <g stroke="#385a6b" stroke-width="1" opacity=".38">
-    <path d="M0 32h256M0 64h256M0 96h256M0 128h256M0 160h256M0 192h256M0 224h256"/>
-    <path d="M32 0v256M64 0v256M96 0v256M128 0v256M160 0v256M192 0v256M224 0v256"/>
-  </g>
-  <rect x="82" y="57" width="108" height="136" fill="#7eeaff" opacity=".12"/>
-  <rect x="66" y="41" width="108" height="136" fill="#07141d" stroke="#7eeaff" stroke-width="4"/>
-  <text x="120" y="113" fill="#7eeaff" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="31" font-weight="700" text-anchor="middle">01</text>
-  <g transform="translate(78 139)">
-    <rect width="12" height="12" fill="#7eeaff"/>
-    <rect x="14" width="12" height="12" fill="#7eeaff" opacity=".86"/>
-    <rect x="28" width="12" height="12" fill="#7eeaff" opacity=".7"/>
-    <rect x="42" width="12" height="12" fill="#7eeaff" opacity=".52"/>
-    <rect x="56" width="12" height="12" fill="none" stroke="#385a6b"/>
-    <rect x="70" width="12" height="12" fill="none" stroke="#385a6b"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="8" fill="#071019"/>
+  <rect x="9" y="9" width="20" height="20" fill="#6ee7ff"/>
+  <rect x="33" y="9" width="22" height="12" fill="#9b8cff"/>
+  <rect x="33" y="25" width="22" height="30" fill="#ff7ab6"/>
+  <rect x="9" y="33" width="20" height="22" fill="#69e6a6"/>
 </svg>
