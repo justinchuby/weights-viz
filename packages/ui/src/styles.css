@@ -73,6 +73,11 @@ button { color: inherit; }
 .wv-zoom span { min-width: 54px; text-align: center; font: 10px ui-monospace, monospace; }
 
 .wv-inspector h2 { font-size: 18px; word-break: break-word; line-height: 1.25; margin: 8px 0 20px; }
+.wv-inspector-tabs { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #29404f; margin-bottom: 20px; }
+.wv-inspector-tabs button { border: 0; background: transparent; color: #718999; padding: 8px; cursor: pointer; font: 600 10px ui-monospace, monospace; text-transform: uppercase; letter-spacing: .08em; }
+.wv-inspector-tabs button + button { border-left: 1px solid #29404f; }
+.wv-inspector-tabs button.active { background: #17303d; color: #8eeaff; }
+.wv-inspector-tabs button:disabled { opacity: .35; cursor: default; }
 .wv-tensor-type { display: inline-block; background: #6ee7ff; color: #061017; padding: 3px 6px; font: 700 10px ui-monospace, monospace; }
 .wv-inspector dl { margin: 0; }
 .wv-inspector dl div { border-top: 1px solid #1e303d; padding: 10px 0; }
@@ -85,6 +90,16 @@ button { color: inherit; }
 .wv-stat-grid b { background: #10212c; padding: 8px; font: 11px ui-monospace, monospace; overflow: hidden; }
 .wv-stat-grid small { color: #607888; display: block; font-size: 8px; margin-top: 5px; }
 .wv-sample pre { max-height: 220px; overflow: auto; padding: 10px; background: #050c12; color: #9adbea; font: 10px/1.5 ui-monospace, monospace; }
+.wv-file-select { width: 100%; margin: -8px 0 14px; padding: 8px 9px; background: #0d1a24; color: #dce9f2; border: 1px solid #29404f; }
+.wv-metadata-summary { display: flex; justify-content: space-between; color: #718999; font: 10px ui-monospace, monospace; border-top: 1px solid #1e303d; padding-top: 10px; }
+.wv-metadata .wv-filter { margin-bottom: 10px; }
+.wv-metadata-list { display: grid; gap: 1px; }
+.wv-metadata-entry { padding: 10px 0; border-top: 1px solid #1e303d; }
+.wv-metadata-entry > div { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.wv-metadata-entry code { color: #8eeaff; font: 10px/1.4 ui-monospace, monospace; overflow-wrap: anywhere; }
+.wv-metadata-entry span { flex: none; color: #607888; font: 8px ui-monospace, monospace; text-transform: uppercase; }
+.wv-metadata-entry p { margin: 6px 0 0; color: #c1d0d9; font: 11px/1.5 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.wv-metadata-empty { color: #708999; padding: 24px 8px; text-align: center; font-size: 12px; line-height: 1.5; }
 
 @media (max-width: 900px) {
   .wv-header { height: auto; min-height: 94px; align-items: flex-start; padding: 18px; gap: 12px; }

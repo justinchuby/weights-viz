@@ -59,13 +59,22 @@ export function WeightsExplorer({
   const [sampleError, setSampleError] = useState<string>();
   const [url, setUrl] = useState("");
   const [query, setQuery] = useState("");
+  const [inspectorMode, setInspectorMode] = useState<"metadata" | "tensor">("metadata");
+  const [metadataFileId, setMetadataFileId] = useState<string>();
+  const [metadataQuery, setMetadataQuery] = useState("");
   const activeModel =
     models.find((model) => model.id === activeModelId) ?? models[0];
+  const metadataFile =
+    activeModel?.files.find((file) => file.id === metadataFileId) ??
+    activeModel?.files[0];
 
   useEffect(() => {
     if (activeModel && activeModel.id !== activeModelId) {
       setActiveModelId(activeModel.id);
       setSelected(undefined);
+      setMetadataFileId(activeModel.files[0]?.id);
+      setInspectorMode("metadata");
+      setMetadataQuery("");
     }
   }, [activeModel, activeModelId]);
 
@@ -212,6 +221,7 @@ export function WeightsExplorer({
                 {...(selected ? { selected } : {})}
                 onSelect={(tensor) => {
                   setSelected(tensor);
+                  setInspectorMode("tensor");
                   setSample(undefined);
                   setSampleError(undefined);
                 }}
@@ -220,7 +230,30 @@ export function WeightsExplorer({
           </div>
 
           <aside className="wv-inspector">
-            {selected ? (
+            <div className="wv-inspector-tabs">
+              <button
+                className={inspectorMode === "metadata" ? "active" : ""}
+                onClick={() => setInspectorMode("metadata")}
+              >
+                Metadata
+              </button>
+              <button
+                className={inspectorMode === "tensor" ? "active" : ""}
+                disabled={!selected}
+                onClick={() => setInspectorMode("tensor")}
+              >
+                Tensor
+              </button>
+            </div>
+            {inspectorMode === "metadata" && metadataFile ? (
+              <MetadataInspector
+                file={metadataFile}
+                files={activeModel.files}
+                query={metadataQuery}
+                onQueryChange={setMetadataQuery}
+                onFileChange={setMetadataFileId}
+              />
+            ) : selected ? (
               <>
                 <div className="wv-tensor-type">{selected.dtype}</div>
                 <h2>{selected.name}</h2>
@@ -600,6 +633,124 @@ function drawCells(
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return <div><span>{label}</span><b>{value}</b></div>;
+}
+
+function MetadataInspector({
+  file,
+  files,
+  query,
+  onQueryChange,
+  onFileChange
+}: {
+  file: ParsedFile;
+  files: ParsedFile[];
+  query: string;
+  onQueryChange: (value: string) => void;
+  onFileChange: (id: string) => void;
+}) {
+  const entries = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return Object.entries(file.metadata).filter(([key, value]) => {
+      if (!needle) return true;
+      return (
+        key.toLowerCase().includes(needle) ||
+        formatMetadataValue(value).toLowerCase().includes(needle)
+      );
+    });
+  }, [file, query]);
+
+  return (
+    <div className="wv-metadata">
+      <div className="wv-tensor-type">{file.format.toUpperCase()}</div>
+      <h2>{file.name}</h2>
+      {files.length > 1 && (
+        <select
+          className="wv-file-select"
+          aria-label="Metadata file"
+          value={file.id}
+          onChange={(event) => onFileChange(event.target.value)}
+        >
+          {files.map((candidate) => (
+            <option key={candidate.id} value={candidate.id}>
+              {candidate.name}
+            </option>
+          ))}
+        </select>
+      )}
+      <div className="wv-metadata-summary">
+        <span>{Object.keys(file.metadata).length} entries</span>
+        <span>{formatBytes(file.size)}</span>
+      </div>
+      <input
+        className="wv-filter"
+        aria-label="Filter metadata"
+        placeholder="Filter metadata keys or values"
+        value={query}
+        onChange={(event) => onQueryChange(event.target.value)}
+      />
+      <div className="wv-metadata-list">
+        {entries.map(([key, value]) => (
+          <div className="wv-metadata-entry" key={key}>
+            <div>
+              <code>{key}</code>
+              <span>{metadataType(value)}</span>
+            </div>
+            <p>{formatMetadataValue(value)}</p>
+          </div>
+        ))}
+        {!entries.length && (
+          <div className="wv-metadata-empty">
+            {Object.keys(file.metadata).length
+              ? "No metadata matches this filter."
+              : "This file does not declare model metadata."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function formatMetadataValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value.length > 400 ? `${value.slice(0, 400)}…` : value;
+  }
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return String(value);
+  }
+  if (value === null || value === undefined) return String(value);
+  if (Array.isArray(value)) {
+    const shown = value.slice(0, 16).map(formatMetadataScalar).join(", ");
+    return `[${shown}${value.length > 16 ? `, … (+${value.length - 16})` : ""}]`;
+  }
+  try {
+    const serialized = JSON.stringify(
+      value,
+      (_key, item) => (typeof item === "bigint" ? item.toString() : item)
+    );
+    return serialized.length > 600 ? `${serialized.slice(0, 600)}…` : serialized;
+  } catch {
+    return String(value);
+  }
+}
+
+function formatMetadataScalar(value: unknown): string {
+  if (typeof value === "string") {
+    const shortened = value.length > 48 ? `${value.slice(0, 48)}…` : value;
+    return JSON.stringify(shortened);
+  }
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "object" && value !== null) return "{…}";
+  return String(value);
+}
+
+function metadataType(value: unknown): string {
+  if (Array.isArray(value)) return `array · ${value.length}`;
+  if (value === null) return "null";
+  return typeof value;
 }
 
 function Detail({

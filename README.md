@@ -100,3 +100,6 @@ The map uses three semantic levels:
 
 Hovering reports the tensor or region byte range. Selecting a tensor opens its
 shape, storage, exact addresses, and value-sampling controls in the inspector.
+The Metadata tab exposes file-level model metadata, including searchable GGUF
+KV entries such as architecture, model name, quantization details, and
+tokenizer configuration.
