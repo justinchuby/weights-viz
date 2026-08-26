@@ -12,7 +12,6 @@ function App() {
   const [models, setModels] = useState<ParsedModel[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const inputRef = useRef<HTMLInputElement>(null);
   const workerRef = useRef<Worker | null>(null);
   const nextId = useRef(1);
   const pending = useRef(
@@ -92,18 +91,22 @@ function App() {
   return (
     <>
       <input
-        ref={inputRef}
-        hidden
+        id="weights-viz-file-input"
+        className="wv-file-input"
         type="file"
         multiple
-        accept=".gguf,.safetensors,.onnx,.json"
-        onChange={(event) => void loadFiles(Array.from(event.target.files ?? []))}
+        accept=".gguf,.safetensors,.onnx,.json,application/octet-stream"
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = "";
+          void loadFiles(files);
+        }}
       />
       <WeightsExplorer
         models={models}
         busy={busy}
         {...(error ? { error } : {})}
-        onChooseFiles={() => inputRef.current?.click()}
+        fileInputId="weights-viz-file-input"
         onOpenUrl={(url) => void loadUrl(url)}
         onSample={(tensor) =>
           request<TensorSample>({ type: "sample", tensor, maxValues: 256 })

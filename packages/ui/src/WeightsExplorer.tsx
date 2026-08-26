@@ -12,6 +12,7 @@ interface WeightsExplorerProps {
   busy?: boolean;
   error?: string;
   onChooseFiles?: () => void;
+  fileInputId?: string;
   onOpenUrl?: (url: string) => void;
   onSample?: (tensor: TensorRecord) => Promise<TensorSample>;
   intro?: string;
@@ -49,6 +50,7 @@ export function WeightsExplorer({
   busy = false,
   error,
   onChooseFiles,
+  fileInputId,
   onOpenUrl,
   onSample,
   intro
@@ -113,11 +115,15 @@ export function WeightsExplorer({
           <h1>Weights <span>Viz</span></h1>
         </div>
         <div className="wv-actions">
-          {onChooseFiles && (
+          {fileInputId ? (
+            <label className="wv-button primary" htmlFor={fileInputId}>
+              Open files
+            </label>
+          ) : onChooseFiles ? (
             <button className="wv-button primary" onClick={onChooseFiles}>
               Open files
             </button>
-          )}
+          ) : null}
           {onOpenUrl && (
             <form
               className="wv-url"
@@ -152,11 +158,15 @@ export function WeightsExplorer({
               {intro ??
                 "Drop GGUF, SafeTensors, or ONNX files here. Files stay on this device; remote models use byte-range requests."}
             </p>
-            {onChooseFiles && (
+            {fileInputId ? (
+              <label className="wv-button primary large" htmlFor={fileInputId}>
+                Choose model files
+              </label>
+            ) : onChooseFiles ? (
               <button className="wv-button primary large" onClick={onChooseFiles}>
                 Choose model files
               </button>
-            )}
+            ) : null}
           </div>
         </section>
       ) : (

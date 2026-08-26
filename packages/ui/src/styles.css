@@ -9,6 +9,7 @@
 html, body, #root { margin: 0; min-height: 100%; background: #071019; }
 button, input { font: inherit; }
 button { color: inherit; }
+.wv-file-input { position: fixed; width: 1px; height: 1px; left: -10000px; opacity: 0; pointer-events: none; }
 
 .wv-shell { min-height: 100vh; background:
   radial-gradient(circle at 75% -15%, rgba(110,231,255,.13), transparent 32rem),
@@ -22,7 +23,7 @@ button { color: inherit; }
 .wv-url input { width: min(32vw, 380px); padding: 10px 12px; }
 .wv-filter { width: 100%; padding: 9px 10px; margin: 8px 0 20px; }
 .wv-url input:focus, .wv-filter:focus { border-color: #6ee7ff; box-shadow: 0 0 0 2px rgba(110,231,255,.1); }
-.wv-button { border: 1px solid #365266; background: #132430; border-radius: 3px; padding: 9px 14px; cursor: pointer; font-weight: 650; }
+.wv-button { display: inline-block; border: 1px solid #365266; background: #132430; border-radius: 3px; padding: 9px 14px; cursor: pointer; font-weight: 650; text-align: center; }
 .wv-button:hover { border-color: #6ee7ff; }
 .wv-button.primary { background: #6ee7ff; color: #061017; border-color: #6ee7ff; }
 .wv-button.large { padding: 12px 20px; }
