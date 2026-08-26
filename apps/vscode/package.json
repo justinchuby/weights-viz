@@ -39,7 +39,7 @@
           { "filenamePattern": "*.onnx" },
           { "filenamePattern": "*.safetensors.index.json" }
         ],
-        "priority": "option"
+        "priority": "default"
       }
     ],
     "commands": [

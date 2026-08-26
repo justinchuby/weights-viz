@@ -5,7 +5,8 @@ Code.
 
 ## Features
 
-- Open model files with the **Weights Visualization** custom editor.
+- Open `.gguf`, `.safetensors`, `.onnx`, and `.safetensors.index.json` files
+  with the **Weights Visualization** custom editor by default.
 - View a Canvas byte map ordered by exact file address, with visible alignment
   gaps and drag-to-pan navigation.
 - Inspect tensor names, shapes, dtypes, exact offsets, lengths, and storage.
