@@ -456,7 +456,7 @@ function WeightMap({
     context.save();
     context.translate(offset.x, offset.y);
     context.scale(zoom, zoom);
-    drawAddressMap(context, layout, selected, zoom, offset, size, theme);
+    drawAddressMap(context, layout, selected, zoom, offset, size, theme, ratio);
     context.restore();
     drawAddressRuler(context, layout, zoom, offset, size, theme);
   }, [layout, offset, selected, size, themeRevision, zoom]);
@@ -675,7 +675,8 @@ function drawAddressMap(
   zoom: number,
   offset: { x: number; y: number },
   viewport: { width: number; height: number },
-  theme: CanvasTheme
+  theme: CanvasTheme,
+  pixelRatio: number
 ) {
   const dtypeColors = new Map<string, string>();
   let colorIndex = 0;
@@ -714,16 +715,25 @@ function drawAddressMap(
     context.globalAlpha = 0.28;
     context.lineWidth = 1 / zoom;
     for (let column = 0; column <= fileLayout.columns; column++) {
-      const x =
+      const x = snapStrokeCoordinate(
         fileLayout.gridX +
-        (column * fileLayout.gridWidth) / fileLayout.columns;
+          (column * fileLayout.gridWidth) / fileLayout.columns,
+        zoom,
+        offset.x,
+        pixelRatio
+      );
       context.beginPath();
       context.moveTo(x, fileLayout.gridY);
       context.lineTo(x, gridBottom);
       context.stroke();
     }
     for (let row = 0; row <= fileLayout.rowCount; row++) {
-      const y = fileLayout.gridY + row * fileLayout.rowHeight;
+      const y = snapStrokeCoordinate(
+        fileLayout.gridY + row * fileLayout.rowHeight,
+        zoom,
+        offset.y,
+        pixelRatio
+      );
       if (y >= visibleTop && y <= visibleBottom) {
         context.beginPath();
         context.moveTo(fileLayout.gridX, y);
@@ -779,10 +789,10 @@ function drawAddressRuler(
     const headerY = offset.y + (fileLayout.gridY - 15) * zoom;
     if (headerY > -20 && headerY < viewport.height + 20) {
       context.fillStyle = theme.text;
-      context.font = "600 11px ui-monospace, monospace";
+      context.font = "600 12px ui-monospace, monospace";
       context.fillText(fileLayout.file.name, 8, headerY, viewport.width - 16);
       context.fillStyle = theme.muted;
-      context.font = "9px ui-monospace, monospace";
+      context.font = "10px ui-monospace, monospace";
       context.fillText(
         `${formatBytes(fileLayout.bytesPerCell)} / cell · ${formatBytes(fileLayout.bytesPerRow)} / row${
           formattedAlignment(fileLayout.file)
@@ -795,7 +805,7 @@ function drawAddressRuler(
     }
 
     context.fillStyle = theme.muted;
-    context.font = "9px ui-monospace, monospace";
+    context.font = "10px ui-monospace, monospace";
     for (let row = 0; row < fileLayout.rowCount; row++) {
       const y =
         offset.y +
@@ -829,7 +839,7 @@ function drawTensorLabel(
 
   const pixelWidth = rect.width * zoom;
   const pixelHeight = rect.height * zoom;
-  const fontSize = (pixelHeight >= 13 && pixelWidth >= 48 ? 10 : 8) / zoom;
+  const fontSize = (pixelHeight >= 14 && pixelWidth >= 48 ? 11 : 9) / zoom;
   const padding = Math.min(4, pixelWidth * 0.1) / zoom;
   const availableWidth = rect.width - padding * 2;
 
@@ -846,7 +856,7 @@ function drawTensorLabel(
     rect.y + Math.min(pixelHeight / 2, 7) / zoom
   );
   if (pixelHeight >= 27 && pixelWidth >= 64) {
-    context.font = `${9 / zoom}px ui-monospace, monospace`;
+    context.font = `${10 / zoom}px ui-monospace, monospace`;
     context.textBaseline = "top";
     context.fillText(
       fitCanvasText(
@@ -859,6 +869,20 @@ function drawTensorLabel(
     );
   }
   context.restore();
+}
+
+function snapStrokeCoordinate(
+  value: number,
+  scale: number,
+  translation: number,
+  pixelRatio: number
+): number {
+  const physicalLineWidth = Math.max(1, Math.round(pixelRatio));
+  const phase = physicalLineWidth % 2 === 0 ? 0 : 0.5;
+  const screenCoordinate = translation + value * scale;
+  const snappedPhysical =
+    Math.round(screenCoordinate * pixelRatio - phase) + phase;
+  return (snappedPhysical / pixelRatio - translation) / scale;
 }
 
 function fitCanvasText(
