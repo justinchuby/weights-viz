@@ -13,6 +13,8 @@
 - Add unified multi-file resolution, stable dtype colors, semantic tensor-role
   shading, parameter counts, and responsive Canvas sizing.
 - Add wheel/pinch navigation and a synchronized vertical map scrollbar.
+- Add editor-style previous/next tensor search navigation.
+- Increase the default map resolution to approximately 128 rows per file.
 
 ## 0.1.0
 

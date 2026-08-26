@@ -2,7 +2,7 @@ import type { ParsedFile, ParsedModel, TensorRecord } from "@weights-viz/core";
 
 export const ADDRESS_GRID_COLUMNS = 64;
 export const NARROW_ADDRESS_GRID_COLUMNS = 32;
-export const ADDRESS_GRID_TARGET_ROWS = 32;
+export const ADDRESS_GRID_TARGET_ROWS = 128;
 export const DRAG_THRESHOLD_PX = 4;
 
 const GUTTER_WIDTH = 104;

@@ -130,7 +130,13 @@ input::placeholder { color: var(--wv-faint); opacity: 1; }
 .wv-panel-title p { color: var(--wv-muted); font-size: 11px; }
 .wv-model-select { display: block; max-width: min(44vw, 440px); margin-top: 4px; padding: 4px 7px; }
 .wv-map-toolbar { min-height: 46px; display: flex; align-items: center; gap: 14px; padding: 7px 16px; border-bottom: 1px solid var(--wv-border); background: var(--wv-surface); }
-.wv-map-toolbar .wv-filter { width: min(260px, 34%); flex: none; }
+.wv-tensor-search { width: min(360px, 46%); flex: none; display: flex; align-items: stretch; background: var(--wv-surface-alt); border: 1px solid var(--wv-border); border-radius: 3px; }
+.wv-tensor-search:focus-within { border-color: var(--wv-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--wv-accent) 18%, transparent); }
+.wv-tensor-search .wv-filter { min-width: 0; width: 100%; flex: 1; border: 0; box-shadow: none; }
+.wv-search-count { min-width: 52px; display: grid; place-items: center; padding: 0 6px; color: var(--wv-faint); font: 9px ui-monospace, monospace; white-space: nowrap; }
+.wv-tensor-search button { width: 30px; flex: none; border: 0; border-left: 1px solid var(--wv-border); color: var(--wv-muted); background: transparent; cursor: pointer; }
+.wv-tensor-search button:hover:not(:disabled) { color: var(--wv-accent); background: var(--wv-surface-raised); }
+.wv-tensor-search button:disabled { color: var(--wv-faint); cursor: default; opacity: .5; }
 .wv-canvas-wrap { flex: 1; width: 100%; min-width: 0; min-height: 0; position: relative; overflow: hidden; background: var(--wv-map-bg); }
 .wv-canvas-wrap canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 .wv-canvas-wrap.dragging canvas { cursor: grabbing; }
@@ -194,6 +200,6 @@ input::placeholder { color: var(--wv-faint); opacity: 1; }
   .wv-map-panel { height: calc(100vh - 110px); min-height: 560px; }
   .wv-shell.compact .wv-map-panel { height: 70vh; min-height: 480px; }
   .wv-map-toolbar { align-items: flex-start; flex-direction: column; gap: 7px; }
-  .wv-map-toolbar .wv-filter { width: 100%; }
+  .wv-tensor-search { width: 100%; }
   .wv-inspector { border-top: 1px solid var(--wv-border); border-left: 0; min-height: 420px; }
 }

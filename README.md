@@ -133,7 +133,8 @@ pan. A wheel or two-finger trackpad gesture scrolls the map; trackpad pinch or
 Ctrl/Cmd + wheel zooms around the pointer. A synchronized vertical scrollbar
 supports direct dragging, track clicks, and keyboard navigation. Selecting a
 tensor opens its shape, storage, exact addresses, and value-sampling controls
-in the inspector.
+in the inspector. The tensor filter includes previous/next controls; Enter and
+Shift+Enter navigate between matches and reveal them in the map.
 The Metadata tab exposes file-level model metadata, including searchable GGUF
 KV entries such as architecture, model name, quantization details, and
 tokenizer configuration.

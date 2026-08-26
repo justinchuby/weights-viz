@@ -46,6 +46,11 @@ interface HoverInfo {
   clientY: number;
 }
 
+interface TensorNavigationTarget {
+  tensor: TensorRecord;
+  sequence: number;
+}
+
 const CHOOSER_GRACE_MS = 1200;
 
 function embeddedHostLabel(): string | undefined {
@@ -81,6 +86,9 @@ export function WeightsExplorer({
   const [metadataFileId, setMetadataFileId] = useState<string>();
   const [metadataQuery, setMetadataQuery] = useState("");
   const [pickerBlocked, setPickerBlocked] = useState(false);
+  const [tensorNavigation, setTensorNavigation] =
+    useState<TensorNavigationTarget>();
+  const tensorNavigationSequence = useRef(0);
   const activeModel =
     models.find((model) => model.id === activeModelId) ?? models[0];
   const metadataFile =
@@ -94,8 +102,48 @@ export function WeightsExplorer({
       setMetadataFileId(activeModel.files[0]?.id);
       setInspectorMode("metadata");
       setMetadataQuery("");
+      setTensorNavigation(undefined);
     }
   }, [activeModel, activeModelId]);
+
+  const matchingTensors = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!activeModel || !needle) return [];
+    return activeModel.files.flatMap((file) =>
+      file.tensors.filter(
+        (tensor) =>
+          tensor.name.toLowerCase().includes(needle) ||
+          tensor.dtype.toLowerCase().includes(needle)
+      )
+    );
+  }, [activeModel, query]);
+  const selectedMatchIndex = selected
+    ? matchingTensors.indexOf(selected)
+    : -1;
+
+  const selectTensor = (tensor: TensorRecord) => {
+    setSelected(tensor);
+    setInspectorMode("tensor");
+    setSample(undefined);
+    setSampleError(undefined);
+  };
+
+  const navigateTensorMatches = (direction: 1 | -1) => {
+    if (matchingTensors.length === 0) return;
+    const nextIndex =
+      selectedMatchIndex < 0
+        ? direction > 0
+          ? 0
+          : matchingTensors.length - 1
+        : (selectedMatchIndex + direction + matchingTensors.length) %
+          matchingTensors.length;
+    const tensor = matchingTensors[nextIndex]!;
+    selectTensor(tensor);
+    setTensorNavigation({
+      tensor,
+      sequence: ++tensorNavigationSequence.current
+    });
+  };
 
   const requestSample = async () => {
     if (!selected || !onSample) return;
@@ -222,14 +270,48 @@ export function WeightsExplorer({
               <p>Wheel to scroll · pinch or Ctrl/⌘ + wheel to zoom · drag to pan</p>
             </div>
             <div className="wv-map-toolbar">
-              <input
-                id="tensor-filter"
-                className="wv-filter"
-                aria-label="Filter tensors"
-                placeholder="Filter tensors by name or dtype"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
+              <div className="wv-tensor-search">
+                <input
+                  id="tensor-filter"
+                  className="wv-filter"
+                  aria-label="Filter tensors"
+                  placeholder="Filter tensors by name or dtype"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    navigateTensorMatches(event.shiftKey ? -1 : 1);
+                  }}
+                />
+                <span
+                  className="wv-search-count"
+                  aria-live="polite"
+                  title={`${matchingTensors.length} matching tensors`}
+                >
+                  {query.trim()
+                    ? `${selectedMatchIndex + 1}/${matchingTensors.length}`
+                    : "—"}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Previous tensor match"
+                  title="Previous match (Shift+Enter)"
+                  disabled={matchingTensors.length === 0}
+                  onClick={() => navigateTensorMatches(-1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  aria-label="Next tensor match"
+                  title="Next match (Enter)"
+                  disabled={matchingTensors.length === 0}
+                  onClick={() => navigateTensorMatches(1)}
+                >
+                  ↓
+                </button>
+              </div>
               <div className="wv-legend" aria-label="Data type legend">
                 {[...new Set(activeModel.files.flatMap((file) => file.tensors.map((tensor) => tensor.dtype)))]
                   .slice(0, 8)
@@ -246,11 +328,10 @@ export function WeightsExplorer({
               model={activeModel}
               query={query}
               {...(selected ? { selected } : {})}
+              {...(tensorNavigation ? { navigationTarget: tensorNavigation } : {})}
               onSelect={(tensor) => {
-                setSelected(tensor);
-                setInspectorMode("tensor");
-                setSample(undefined);
-                setSampleError(undefined);
+                setTensorNavigation(undefined);
+                selectTensor(tensor);
               }}
             />
           </div>
@@ -391,11 +472,13 @@ function WeightMap({
   model,
   query,
   selected,
+  navigationTarget,
   onSelect
 }: {
   model: ParsedModel;
   query: string;
   selected?: TensorRecord;
+  navigationTarget?: TensorNavigationTarget;
   onSelect: (tensor: TensorRecord) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -457,6 +540,32 @@ function WeightMap({
   useEffect(() => {
     setOffset((current) => clampOffset(current, layout, size, zoom));
   }, [layout, size, zoom]);
+
+  useEffect(() => {
+    if (!navigationTarget) return;
+    const fileLayout = layout.files.find(
+      (candidate) => candidate.file.id === navigationTarget.tensor.fileId
+    );
+    const rect = fileLayout?.spans.find(
+      (span) =>
+        span.tensor === navigationTarget.tensor ||
+        (span.tensor?.id === navigationTarget.tensor.id &&
+          span.tensor.fileId === navigationTarget.tensor.fileId)
+    )?.rects[0];
+    if (!rect) return;
+    setOffset(
+      clampOffset(
+        {
+          x: size.width / 2 - (rect.x + rect.width / 2) * zoom,
+          y: size.height / 2 - (rect.y + rect.height / 2) * zoom
+        },
+        layout,
+        size,
+        zoom
+      )
+    );
+    setHover(undefined);
+  }, [layout, navigationTarget, size, zoom]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

@@ -10,12 +10,13 @@ import {
 
 describe("address map", () => {
   it.each([
-    [100n * 1024n ** 2n, 64n * 1024n],
-    [1024n ** 3n, 512n * 1024n],
-    [10n * 1024n ** 3n, 8n * 1024n ** 2n],
-    [100n * 1024n ** 3n, 64n * 1024n ** 2n],
-    [1024n ** 4n, 512n * 1024n ** 2n],
-    [2n * 1024n ** 4n, 1024n ** 3n]
+    [100n * 1024n ** 2n, 16n * 1024n],
+    [1024n ** 3n, 128n * 1024n],
+    [10n * 1024n ** 3n, 2n * 1024n ** 2n],
+    [16n * 1024n ** 3n, 2n * 1024n ** 2n],
+    [100n * 1024n ** 3n, 16n * 1024n ** 2n],
+    [1024n ** 4n, 128n * 1024n ** 2n],
+    [2n * 1024n ** 4n, 256n * 1024n ** 2n]
   ])("chooses a power-of-two scale for %s bytes", (size, expected) => {
     expect(chooseBytesPerCell(size)).toBe(expected);
   });
@@ -97,8 +98,8 @@ describe("address map", () => {
       layout.files[0]!.gridY +
         layout.files[0]!.rowCount * layout.files[0]!.rowHeight
     );
-    expect(layout.files[0]!.bytesPerRow).toBe(64n * 1024n ** 3n);
-    expect(layout.files[1]!.bytesPerRow).toBe(64n * 1024n ** 3n);
+    expect(layout.files[0]!.bytesPerRow).toBe(16n * 1024n ** 3n);
+    expect(layout.files[1]!.bytesPerRow).toBe(16n * 1024n ** 3n);
     expect(layout.files[0]!.bytesPerCell).toBe(layout.files[1]!.bytesPerCell);
   });
 
