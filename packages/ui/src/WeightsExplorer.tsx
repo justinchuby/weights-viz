@@ -787,28 +787,61 @@ function drawTensorLabel(
   const rect = rects
     .filter((candidate) => isVisible(candidate, visibleTop, visibleBottom))
     .sort((a, b) => b.width - a.width)[0];
-  if (!rect || rect.width * zoom < 110 || rect.height * zoom < 14) return;
+  if (!rect || rect.width * zoom < 24 || rect.height * zoom < 9) return;
 
-  const fontSize = 11 / zoom;
-  const padding = 6 / zoom;
+  const pixelWidth = rect.width * zoom;
+  const pixelHeight = rect.height * zoom;
+  const fontSize = (pixelHeight >= 13 && pixelWidth >= 48 ? 10 : 8) / zoom;
+  const padding = Math.min(4, pixelWidth * 0.1) / zoom;
+  const availableWidth = rect.width - padding * 2;
+
+  context.save();
+  context.beginPath();
+  context.rect(rect.x, rect.y, rect.width, rect.height);
+  context.clip();
   context.fillStyle = theme.labelText;
   context.font = `600 ${fontSize}px ui-monospace, monospace`;
-  context.textBaseline = "top";
+  context.textBaseline = "middle";
   context.fillText(
-    tensor.name.length > 48 ? `${tensor.name.slice(0, 45)}…` : tensor.name,
+    fitCanvasText(context, tensor.name, availableWidth),
     rect.x + padding,
-    rect.y + 3 / zoom,
-    rect.width - padding * 2
+    rect.y + Math.min(pixelHeight / 2, 7) / zoom
   );
-  if (rect.height * zoom >= 28) {
+  if (pixelHeight >= 27 && pixelWidth >= 64) {
     context.font = `${9 / zoom}px ui-monospace, monospace`;
+    context.textBaseline = "top";
     context.fillText(
-      `${tensor.dtype} · ${formatBytes(tensor.byteLength)}`,
+      fitCanvasText(
+        context,
+        `${tensor.dtype} · ${formatBytes(tensor.byteLength)}`,
+        availableWidth
+      ),
       rect.x + padding,
-      rect.y + 16 / zoom,
-      rect.width - padding * 2
+      rect.y + 16 / zoom
     );
   }
+  context.restore();
+}
+
+function fitCanvasText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+): string {
+  if (context.measureText(text).width <= maxWidth) return text;
+  const ellipsis = "…";
+  if (context.measureText(ellipsis).width > maxWidth) return "";
+  let low = 0;
+  let high = text.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (context.measureText(`${text.slice(0, middle)}${ellipsis}`).width <= maxWidth) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+  return `${text.slice(0, low)}${ellipsis}`;
 }
 
 interface CanvasTheme {
