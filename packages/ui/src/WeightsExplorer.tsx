@@ -45,6 +45,19 @@ const PALETTE = [
   "#de8cff"
 ];
 
+const CHOOSER_GRACE_MS = 1200;
+
+function embeddedHostLabel(): string | undefined {
+  if (typeof navigator === "undefined") return undefined;
+  const agent = navigator.userAgent;
+  if (/\bCode\/|VSCode|Electron\//i.test(agent)) return "The VS Code built-in browser";
+  if (/\bwv\b|; wv\)/.test(agent)) return "This Android in-app browser";
+  if (/FBAN|FBAV|Instagram|Line\/|Twitter|MicroMessenger/i.test(agent)) {
+    return "This in-app browser";
+  }
+  return undefined;
+}
+
 export function WeightsExplorer({
   models,
   busy = false,
@@ -64,6 +77,7 @@ export function WeightsExplorer({
   const [inspectorMode, setInspectorMode] = useState<"metadata" | "tensor">("metadata");
   const [metadataFileId, setMetadataFileId] = useState<string>();
   const [metadataQuery, setMetadataQuery] = useState("");
+  const [pickerBlocked, setPickerBlocked] = useState(false);
   const activeModel =
     models.find((model) => model.id === activeModelId) ?? models[0];
   const metadataFile =
@@ -116,7 +130,9 @@ export function WeightsExplorer({
         </div>
         <div className="wv-actions">
           {onFilesSelected ? (
-            <FilePicker onFilesSelected={onFilesSelected}>Open files</FilePicker>
+            <FilePicker onFilesSelected={onFilesSelected} onPickerResult={setPickerBlocked}>
+              Open files
+            </FilePicker>
           ) : onChooseFiles ? (
             <button className="wv-button primary" onClick={onChooseFiles}>
               Open files
@@ -144,6 +160,24 @@ export function WeightsExplorer({
       </header>
 
       {error && <div className="wv-alert error">{error}</div>}
+      {pickerBlocked && (
+        <div className="wv-alert warning" role="status">
+          <div>
+            <b>The file chooser did not open.</b>{" "}
+            {embeddedHostLabel() ?? "This browser or embedded webview"} does not allow web pages
+            to open the system file dialog. Drag model files onto this window instead, or paste a
+            model URL into the field above. Opening this page in a normal browser tab also works.
+          </div>
+          <button
+            type="button"
+            className="wv-alert-dismiss"
+            aria-label="Dismiss"
+            onClick={() => setPickerBlocked(false)}
+          >
+            ×
+          </button>
+        </div>
+      )}
       {busy && <div className="wv-progress"><span /></div>}
 
       {!activeModel ? (
@@ -157,7 +191,7 @@ export function WeightsExplorer({
                 "Drop GGUF, SafeTensors, or ONNX files here. Files stay on this device; remote models use byte-range requests."}
             </p>
             {onFilesSelected ? (
-              <FilePicker large onFilesSelected={onFilesSelected}>
+              <FilePicker large onFilesSelected={onFilesSelected} onPickerResult={setPickerBlocked}>
                 Choose model files
               </FilePicker>
             ) : onChooseFiles ? (
@@ -646,21 +680,66 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 function FilePicker({
   children,
   large = false,
-  onFilesSelected
+  onFilesSelected,
+  onPickerResult
 }: {
   children: string;
   large?: boolean;
   onFilesSelected: (files: File[]) => void;
+  onPickerResult?: (blocked: boolean) => void;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const stopWatch = useRef<((blocked?: boolean) => void) | undefined>(undefined);
+  const report = useRef(onPickerResult);
+  report.current = onPickerResult;
+
+  // The chooser is a native dialog: it always moves focus away from the page.
+  // Embedded webviews that ignore file inputs produce no dialog and no focus
+  // change, which is the only observable difference from a working browser.
+  const watchChooser = () => {
+    stopWatch.current?.();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const stop = (blocked?: boolean) => {
+      if (timeout !== undefined) clearTimeout(timeout);
+      window.removeEventListener("blur", opened);
+      document.removeEventListener("visibilitychange", opened);
+      stopWatch.current = undefined;
+      if (blocked !== undefined) report.current?.(blocked);
+    };
+    const opened = () => stop(false);
+    timeout = setTimeout(() => stop(true), CHOOSER_GRACE_MS);
+    window.addEventListener("blur", opened);
+    document.addEventListener("visibilitychange", opened);
+    stopWatch.current = stop;
+  };
+
+  const chooserWorked = () => {
+    stopWatch.current?.();
+    report.current?.(false);
+  };
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.addEventListener("cancel", chooserWorked);
+    return () => {
+      input.removeEventListener("cancel", chooserWorked);
+      stopWatch.current?.();
+    };
+  }, []);
+
   return (
     <span className={`wv-file-picker wv-button primary${large ? " large" : ""}`}>
       <span aria-hidden="true">{children}</span>
       <input
+        ref={inputRef}
         type="file"
         multiple
         aria-label={children}
         accept=".gguf,.safetensors,.onnx,.json,application/octet-stream"
+        onClick={watchChooser}
         onChange={(event) => {
+          chooserWorked();
           const files = Array.from(event.currentTarget.files ?? []);
           event.currentTarget.value = "";
           if (files.length) onFilesSelected(files);

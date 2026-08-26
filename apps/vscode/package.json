@@ -26,7 +26,7 @@
     "vscode": "^1.95.0"
   },
   "categories": ["Visualization"],
-  "activationEvents": ["onCustomEditor:weightsViz.viewer", "onCommand:weightsViz.openUrl"],
+  "activationEvents": ["onCustomEditor:weightsViz.viewer", "onCommand:weightsViz.openUrl", "onCommand:weightsViz.openFiles"],
   "main": "./dist/extension.cjs",
   "contributes": {
     "customEditors": [
@@ -43,6 +43,10 @@
       }
     ],
     "commands": [
+      {
+        "command": "weightsViz.openFiles",
+        "title": "Weights Viz: Open Model Files"
+      },
       {
         "command": "weightsViz.openUrl",
         "title": "Weights Viz: Open Model URL"

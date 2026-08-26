@@ -57,6 +57,12 @@ function App() {
     return () => window.removeEventListener("message", receive);
   }, [pendingSamples]);
 
+  const chooseFiles = () => {
+    setError(undefined);
+    setBusy(true);
+    vscode.postMessage({ type: "open" });
+  };
+
   const sample = (tensor: TensorRecord) =>
     new Promise<TensorSample>((resolve, reject) => {
       const requestId = crypto.randomUUID();
@@ -69,7 +75,8 @@ function App() {
       models={models}
       busy={busy}
       {...(error ? { error } : {})}
-      intro="Open a GGUF, SafeTensors, or ONNX file with the Weights Visualization editor."
+      intro="Open a GGUF, SafeTensors, or ONNX file with the Weights Visualization editor, or choose files below. VS Code webviews cannot show the browser file dialog, so this button asks VS Code for its native picker."
+      onChooseFiles={chooseFiles}
       onSample={sample}
     />
   );

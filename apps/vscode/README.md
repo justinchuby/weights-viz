@@ -12,8 +12,13 @@ Code.
 - Sample values from SafeTensors and supported GGUF types on demand.
 - Open `*.safetensors.index.json` to combine model shards automatically.
 - Inspect ONNX initializer and external-data location metadata.
+- Run **Weights Viz: Open Model Files** to pick model files with the native VS
+  Code dialog, or use the **Open files** button inside the viewer.
 - Run **Weights Viz: Open Model URL** to inspect public remote models with HTTP
   Range requests.
+
+VS Code webviews cannot open the browser file dialog, so the viewer asks the
+extension host for the native picker instead of using an HTML file input.
 
 Model files are parsed locally. Remote requests omit credentials.
 

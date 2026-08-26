@@ -34,6 +34,9 @@ button { color: inherit; }
 @keyframes wv-load { from { transform: translateX(-110%); } to { transform: translateX(310%); } }
 .wv-alert { padding: 11px 13px; background: #132532; border: 1px solid #294555; color: #9db3c1; font-size: 12px; margin-top: 12px; }
 .wv-alert.error { color: #ffd0d9; background: #2d1820; border-color: #693142; margin: 10px 28px; }
+.wv-alert.warning { color: #ffe6bd; background: #2b2213; border-color: #6b5327; margin: 10px 28px; display: flex; gap: 12px; align-items: flex-start; line-height: 1.55; }
+.wv-alert.warning b { color: #ffb45e; }
+.wv-alert-dismiss { margin-left: auto; background: transparent; border: 0; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; color: inherit; }
 
 .wv-empty { min-height: calc(100vh - 94px); position: relative; display: grid; place-items: center; overflow: hidden; }
 .wv-empty-grid { position: absolute; inset: 0; opacity: .13; background-image: linear-gradient(#6ee7ff 1px, transparent 1px), linear-gradient(90deg, #6ee7ff 1px, transparent 1px); background-size: 42px 42px; mask-image: radial-gradient(circle, black, transparent 68%); }

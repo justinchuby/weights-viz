@@ -101,12 +101,18 @@ async function connectPanel(
   load: () => Promise<Awaited<ReturnType<typeof loadSources>>>
 ): Promise<void> {
   let ready = false;
-  let outcome:
-    | { type: "models"; models: Awaited<ReturnType<typeof loadSources>> }
-    | { type: "error"; error: string }
-    | undefined;
+  let initial: Awaited<ReturnType<typeof loadSources>> | undefined;
+  const opened: Awaited<ReturnType<typeof loadSources>> = [];
+  let failure: string | undefined;
   const publish = async () => {
-    if (ready && outcome) await panel.webview.postMessage(encode(outcome));
+    if (!ready) return;
+    if (failure !== undefined && !opened.length) {
+      await panel.webview.postMessage(encode({ type: "error", error: failure }));
+    } else if (initial || opened.length) {
+      await panel.webview.postMessage(
+        encode({ type: "models", models: [...(initial ?? []), ...opened] })
+      );
+    }
   };
   const subscription = panel.webview.onDidReceiveMessage(async (message: unknown) => {
     const decoded = revive(message) as {
@@ -117,6 +123,18 @@ async function connectPanel(
     if (decoded.type === "ready") {
       ready = true;
       await publish();
+      return;
+    }
+    if (decoded.type === "open") {
+      try {
+        const picked = await pickModelFiles();
+        const chosen = await collectSources(picked);
+        chosen.forEach((source) => sources.set(source.id, source));
+        if (chosen.length) opened.push(...(await loadSources(chosen)));
+        await publish();
+      } catch (error) {
+        await panel.webview.postMessage(encode({ type: "error", error: errorMessage(error) }));
+      }
       return;
     }
     if (decoded.type === "sample" && decoded.requestId && decoded.tensor) {
@@ -142,11 +160,33 @@ async function connectPanel(
   });
   panel.onDidDispose(() => subscription.dispose());
   try {
-    outcome = { type: "models", models: await load() };
+    initial = await load();
   } catch (error) {
-    outcome = { type: "error", error: errorMessage(error) };
+    failure = errorMessage(error);
   }
   await publish();
+}
+
+async function pickModelFiles(): Promise<vscode.Uri[]> {
+  const picked = await vscode.window.showOpenDialog({
+    canSelectMany: true,
+    canSelectFolders: false,
+    openLabel: "Open",
+    title: "Open model files",
+    filters: {
+      "Model weights": ["gguf", "safetensors", "onnx", "json"],
+      "All files": ["*"]
+    }
+  });
+  return picked ?? [];
+}
+
+async function collectSources(uris: vscode.Uri[]): Promise<RandomAccessSource[]> {
+  const collected = new Map<string, RandomAccessSource>();
+  for (const uri of uris) {
+    for (const source of await discoverSources(uri)) collected.set(source.id, source);
+  }
+  return [...collected.values()];
 }
 
 async function discoverSources(uri: vscode.Uri): Promise<RandomAccessSource[]> {
@@ -226,9 +266,27 @@ function errorMessage(error: unknown): string {
 
 export function activate(context: vscode.ExtensionContext): void {
   const provider = new WeightsEditorProvider(context);
+  const createPanel = (title: string) =>
+    vscode.window.createWebviewPanel("weightsViz.remote", title, vscode.ViewColumn.Active, {
+      enableScripts: true,
+      localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "dist", "webview")]
+    });
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider("weightsViz.viewer", provider, {
       webviewOptions: { retainContextWhenHidden: true }
+    }),
+    vscode.commands.registerCommand("weightsViz.openFiles", async () => {
+      const picked = await pickModelFiles();
+      if (!picked.length) return;
+      const panel = createPanel("Weights Viz: Model files");
+      const sources = new Map<string, RandomAccessSource>();
+      const connection = connectPanel(panel, sources, provider.parsers, async () => {
+        const opened = await collectSources(picked);
+        opened.forEach((source) => sources.set(source.id, source));
+        return loadSources(opened);
+      });
+      panel.webview.html = webviewHtml(panel.webview, context.extensionUri);
+      await connection;
     }),
     vscode.commands.registerCommand("weightsViz.openUrl", async () => {
       const url = await vscode.window.showInputBox({
@@ -244,17 +302,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       });
       if (!url) return;
-      const panel = vscode.window.createWebviewPanel(
-        "weightsViz.remote",
-        "Weights Viz: Remote model",
-        vscode.ViewColumn.Active,
-        {
-          enableScripts: true,
-          localResourceRoots: [
-            vscode.Uri.joinPath(context.extensionUri, "dist", "webview")
-          ]
-        }
-      );
+      const panel = createPanel("Weights Viz: Remote model");
       const sources = new Map<string, RandomAccessSource>();
       const connection = connectPanel(panel, sources, provider.parsers, async () => {
         return loadModelUrl(url, undefined, (source) => {

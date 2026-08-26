@@ -22,6 +22,19 @@ The project ships the same React visualization in two hosts:
 Unknown GGUF quantization types remain fully visible in the byte map and are
 marked as unavailable for value decoding.
 
+## Opening local files
+
+The web app uses a real `<input type="file">`, drag and drop, and clipboard
+paste. Embedded webviews such as the VS Code built-in browser and in-app
+browsers silently ignore file inputs: the click produces no dialog and no
+error. The app detects that case, because a real file dialog always moves focus
+away from the page, and then shows an inline notice pointing at drag and drop
+and the URL field.
+
+In VS Code the viewer never relies on an HTML file input. **Open files** and
+**Weights Viz: Open Model Files** ask the extension host for the native
+`showOpenDialog` picker, which also works over Remote SSH and in Codespaces.
+
 ## Remote files
 
 Paste a public model URL into the web app or run **Weights Viz: Open Model URL**

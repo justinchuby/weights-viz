@@ -80,11 +80,19 @@ function App() {
       event.preventDefault();
       void loadFiles(Array.from(event.dataTransfer?.files ?? []));
     };
+    const paste = (event: ClipboardEvent) => {
+      const files = Array.from(event.clipboardData?.files ?? []);
+      if (!files.length) return;
+      event.preventDefault();
+      void loadFiles(files);
+    };
     window.addEventListener("dragover", prevent);
     window.addEventListener("drop", drop);
+    window.addEventListener("paste", paste);
     return () => {
       window.removeEventListener("dragover", prevent);
       window.removeEventListener("drop", drop);
+      window.removeEventListener("paste", paste);
     };
   });
 
