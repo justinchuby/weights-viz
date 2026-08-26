@@ -68,19 +68,19 @@ interface OnnxExternalData {
 }
 
 interface OnnxInitializerMetadata {
-  dataLocation: number;
-  dataLocationName: string;
-  dataType: number;
-  dataTypeName: string;
+  data_location: number;
+  data_location_name: string;
+  data_type: number;
+  data_type_name: string;
   dims: bigint[];
-  externalData: OnnxExternalData;
+  external_data: OnnxExternalData;
   name: string;
-  rawData: {
+  raw_data: {
     length: bigint;
     offset?: bigint;
     present: boolean;
   };
-  tensorOffset: bigint;
+  tensor_offset: bigint;
 }
 
 interface ParsedOnnxModel {
@@ -136,15 +136,15 @@ function resolveOnnxMetadataLimit(value?: number): number {
 function buildFileMetadata(parsed: ParsedOnnxModel): Record<string, unknown> {
   const metadata: Record<string, unknown> = {
     initializers: parsed.initializerMetadata,
-    initializerCount: parsed.initializerMetadata.length
+    initializer_count: parsed.initializerMetadata.length
   };
-  if (parsed.graphName !== undefined) metadata.graphName = parsed.graphName;
-  if (parsed.irVersion !== undefined) metadata.irVersion = parsed.irVersion;
-  if (parsed.producerName !== undefined) metadata.producerName = parsed.producerName;
-  if (parsed.producerVersion !== undefined) metadata.producerVersion = parsed.producerVersion;
-  if (parsed.modelVersion !== undefined) metadata.modelVersion = parsed.modelVersion;
+  if (parsed.graphName !== undefined) metadata.graph_name = parsed.graphName;
+  if (parsed.irVersion !== undefined) metadata.ir_version = parsed.irVersion;
+  if (parsed.producerName !== undefined) metadata.producer_name = parsed.producerName;
+  if (parsed.producerVersion !== undefined) metadata.producer_version = parsed.producerVersion;
+  if (parsed.modelVersion !== undefined) metadata.model_version = parsed.modelVersion;
   if (parsed.domain !== undefined) metadata.domain = parsed.domain;
-  if (parsed.docString !== undefined) metadata.docString = parsed.docString;
+  if (parsed.docString !== undefined) metadata.doc_string = parsed.docString;
   return metadata;
 }
 
@@ -486,12 +486,12 @@ function parseTensorProto(
     metadata: {
       name,
       dims,
-      dataType,
-      dataTypeName,
-      dataLocation,
-      dataLocationName,
-      tensorOffset: BigInt(start),
-      rawData:
+      data_type: dataType,
+      data_type_name: dataTypeName,
+      data_location: dataLocation,
+      data_location_name: dataLocationName,
+      tensor_offset: BigInt(start),
+      raw_data:
         rawDataOffset === undefined
           ? {
               present: false,
@@ -502,7 +502,7 @@ function parseTensorProto(
               offset: rawDataOffset,
               length: rawDataLength
             },
-      externalData
+      external_data: externalData
     },
     tensor
   };

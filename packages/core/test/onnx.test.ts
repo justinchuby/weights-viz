@@ -61,36 +61,36 @@ describe("OnnxParser", () => {
     expect(tensorRecord.byteOffset).toBe(BigInt(rawDataOffset));
 
     const metadata = parsed.metadata as {
-      graphName: string;
+      graph_name: string;
       initializers: Array<{
-        dataLocation: number;
-        dataLocationName: string;
-        dataType: number;
-        dataTypeName: string;
+        data_location: number;
+        data_location_name: string;
+        data_type: number;
+        data_type_name: string;
         dims: bigint[];
-        rawData: { present: boolean; offset?: bigint; length: bigint };
+        raw_data: { present: boolean; offset?: bigint; length: bigint };
       }>;
-      irVersion: bigint;
-      modelVersion: bigint;
-      producerName: string;
-      producerVersion: string;
+      ir_version: bigint;
+      model_version: bigint;
+      producer_name: string;
+      producer_version: string;
       domain: string;
-      docString: string;
+      doc_string: string;
     };
-    expect(metadata.graphName).toBe("main");
-    expect(metadata.irVersion).toBe(9n);
-    expect(metadata.modelVersion).toBe(42n);
-    expect(metadata.producerName).toBe("synthetic");
-    expect(metadata.producerVersion).toBe("1.2.3");
+    expect(metadata.graph_name).toBe("main");
+    expect(metadata.ir_version).toBe(9n);
+    expect(metadata.model_version).toBe(42n);
+    expect(metadata.producer_name).toBe("synthetic");
+    expect(metadata.producer_version).toBe("1.2.3");
     expect(metadata.domain).toBe("ai.weights-viz");
-    expect(metadata.docString).toBe("model documentation");
+    expect(metadata.doc_string).toBe("model documentation");
     expect(metadata.initializers[0]).toMatchObject({
-      dataLocation: 0,
-      dataLocationName: "DEFAULT",
-      dataType: 1,
-      dataTypeName: "FLOAT",
+      data_location: 0,
+      data_location_name: "DEFAULT",
+      data_type: 1,
+      data_type_name: "FLOAT",
       dims: [2n, 3n],
-      rawData: {
+      raw_data: {
         present: true,
         offset: BigInt(rawDataOffset),
         length: 6n
@@ -140,7 +140,7 @@ describe("OnnxParser", () => {
 
     const metadata = parsed.metadata as {
       initializers: Array<{
-        externalData: {
+        external_data: {
           basepath?: string;
           checksum?: string;
           length?: bigint;
@@ -149,7 +149,7 @@ describe("OnnxParser", () => {
         };
       }>;
     };
-    expect(metadata.initializers[0]?.externalData).toEqual({
+    expect(metadata.initializers[0]?.external_data).toEqual({
       location: "weights.bin",
       offset: 128n,
       length: 64n,
