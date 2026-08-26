@@ -108,9 +108,17 @@ export function WeightsExplorer({
   return (
     <main className={`wv-shell${compact ? " compact" : ""}`}>
       {!compact && <header className="wv-header">
-        <div>
+        <div className="wv-brand">
           <div className="wv-kicker">LOCAL-FIRST MODEL INSPECTOR</div>
           <h1>Weights <span>Viz</span></h1>
+          <a
+            className="wv-repo-link"
+            href="https://github.com/justinchuby/weights-viz"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open source by justinchuby · GitHub ↗
+          </a>
         </div>
         <div className="wv-actions">
           {onFilesSelected ? (

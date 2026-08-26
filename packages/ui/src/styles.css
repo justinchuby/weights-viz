@@ -76,8 +76,10 @@ input::placeholder { color: var(--wv-faint); opacity: 1; }
 
 .wv-shell { min-height: 100vh; color: var(--wv-text); background: var(--wv-bg); }
 .wv-header { height: 94px; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; border-bottom: 1px solid var(--wv-border); background: var(--wv-surface); }
-.wv-header h1 { margin: 2px 0 0; font-size: 28px; letter-spacing: -1.5px; }
+.wv-header h1 { margin: 2px 0 1px; font-size: 28px; letter-spacing: -1.5px; }
 .wv-header h1 span { color: var(--wv-accent); font-weight: 400; }
+.wv-repo-link { color: var(--wv-muted); font: 10px/1.2 ui-monospace, SFMono-Regular, monospace; text-decoration: none; }
+.wv-repo-link:hover { color: var(--wv-accent); text-decoration: underline; }
 .wv-kicker, .wv-label, .wv-panel-title span { color: var(--wv-faint); font: 600 10px/1.2 ui-monospace, SFMono-Regular, monospace; letter-spacing: .14em; text-transform: uppercase; }
 .wv-actions, .wv-url { display: flex; align-items: center; gap: 8px; }
 .wv-url input, .wv-filter, .wv-model-select { background: var(--wv-surface-alt); color: var(--wv-text); border: 1px solid var(--wv-border); border-radius: 3px; outline: none; }
