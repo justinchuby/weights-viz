@@ -140,3 +140,9 @@ Shift+Enter navigate between matches and reveal them in the map.
 The Metadata tab exposes file-level model metadata, including searchable GGUF
 KV entries such as architecture, model name, quantization details, and
 tokenizer configuration.
+
+## Credits
+
+Designed and built collaboratively by
+[Justin Chuby](https://github.com/justinchuby) and
+[GitHub Copilot](https://github.com/features/copilot).
