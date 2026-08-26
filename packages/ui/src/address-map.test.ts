@@ -1,6 +1,7 @@
 import type { ParsedFile, ParsedModel, TensorRecord } from "@weights-viz/core";
 import { describe, expect, it } from "vitest";
 import {
+  addressMapMaxScrollY,
   chooseBytesPerCell,
   createAddressMapLayout,
   hitTestAddressMap,
@@ -153,6 +154,20 @@ describe("address map", () => {
   it("distinguishes clicks from drags at four pixels", () => {
     expect(isClickGesture(0, 0, 2, 2)).toBe(true);
     expect(isClickGesture(0, 0, 4, 0)).toBe(false);
+  });
+
+  it("allows the final address row to scroll to the viewport top", () => {
+    const layout = createAddressMapLayout(
+      makeModel(256n * 1024n ** 2n, []),
+      1132
+    );
+    const lastFile = layout.files.at(-1)!;
+    const lastRowTop =
+      lastFile.gridY + (lastFile.rowCount - 1) * lastFile.rowHeight;
+
+    expect(addressMapMaxScrollY(layout, 360, 1)).toBe(lastRowTop);
+    expect(addressMapMaxScrollY(layout, 360, 2)).toBe(lastRowTop * 2);
+    expect(addressMapMaxScrollY(layout, layout.contentHeight, 1)).toBe(0);
   });
 });
 

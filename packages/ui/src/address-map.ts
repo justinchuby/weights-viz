@@ -121,6 +121,21 @@ export function chooseBytesPerCell(
   return nextPowerOfTwo(ceilDiv(fileSize, targetCells));
 }
 
+export function addressMapMaxScrollY(
+  layout: AddressMapLayout,
+  viewportHeight: number,
+  zoom: number
+): number {
+  if (layout.contentHeight * zoom <= viewportHeight) return 0;
+  const lastFile = layout.files.at(-1);
+  if (!lastFile) return 0;
+  return (
+    (lastFile.gridY +
+      Math.max(0, lastFile.rowCount - 1) * lastFile.rowHeight) *
+    zoom
+  );
+}
+
 function scaleBytesPerCell(bytesPerCell: bigint, step: number): bigint {
   if (step >= 0) return bytesPerCell << BigInt(step);
   return maxBigInt(1n, bytesPerCell >> BigInt(-step));

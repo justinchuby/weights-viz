@@ -6,6 +6,7 @@ import type {
   TensorSample
 } from "@weights-viz/core";
 import {
+  addressMapMaxScrollY,
   createAddressMapLayout,
   hitTestAddressMap,
   isClickGesture,
@@ -430,6 +431,7 @@ function WeightMap({
     },
     [model, query, resolutionStep, size.width]
   );
+  const maxVerticalScroll = addressMapMaxScrollY(layout, size.height, zoom);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -653,7 +655,7 @@ function WeightMap({
       </div>
       <VerticalMapScrollbar
         viewportHeight={size.height}
-        contentHeight={layout.contentHeight * zoom}
+        max={maxVerticalScroll}
         value={-offset.y}
         onChange={(value) =>
           setOffset((current) =>
@@ -738,12 +740,12 @@ function WeightMap({
 
 function VerticalMapScrollbar({
   viewportHeight,
-  contentHeight,
+  max,
   value,
   onChange
 }: {
   viewportHeight: number;
-  contentHeight: number;
+  max: number;
   value: number;
   onChange: (value: number) => void;
 }) {
@@ -754,13 +756,13 @@ function VerticalMapScrollbar({
     startValue: number;
     travel: number;
   } | undefined>(undefined);
-  const max = Math.max(0, contentHeight - viewportHeight);
   if (max <= 0) return null;
 
   const trackHeight = Math.max(1, viewportHeight - 68);
+  const scrollableHeight = max + viewportHeight;
   const thumbHeight = Math.min(
     trackHeight,
-    Math.max(32, trackHeight * (viewportHeight / contentHeight))
+    Math.max(32, trackHeight * (viewportHeight / scrollableHeight))
   );
   const travel = Math.max(1, trackHeight - thumbHeight);
   const current = Math.min(max, Math.max(0, value));
@@ -1207,7 +1209,7 @@ function clampOffset(
   zoom: number
 ) {
   const minX = Math.min(0, viewport.width - layout.width * zoom);
-  const minY = Math.min(0, viewport.height - layout.contentHeight * zoom);
+  const minY = -addressMapMaxScrollY(layout, viewport.height, zoom);
   return {
     x: Math.min(0, Math.max(minX, offset.x)),
     y: Math.min(0, Math.max(minY, offset.y))
