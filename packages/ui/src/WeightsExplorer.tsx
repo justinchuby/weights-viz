@@ -923,9 +923,19 @@ function drawTensorLabel(
   visibleBottom: number,
   theme: CanvasTheme
 ) {
-  const rect = rects
-    .filter((candidate) => isVisible(candidate, visibleTop, visibleBottom))
-    .sort((a, b) => b.width - a.width)[0];
+  const visibleRects = rects.filter((candidate) =>
+    isVisible(candidate, visibleTop, visibleBottom)
+  );
+  const firstRect = visibleRects[0];
+  const widestRect = visibleRects.reduce<AddressRect | undefined>(
+    (widest, candidate) =>
+      !widest || candidate.width > widest.width ? candidate : widest,
+    undefined
+  );
+  const rect =
+    firstRect && widestRect && firstRect.width >= widestRect.width * 0.75
+      ? firstRect
+      : widestRect;
   if (!rect || rect.width * zoom < 24 || rect.height * zoom < 9) return;
 
   const pixelWidth = rect.width * zoom;
