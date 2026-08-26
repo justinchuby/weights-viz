@@ -67,7 +67,8 @@ button { color: inherit; }
 .wv-panel-title h2 { margin: 4px 0 0; font-size: 17px; }
 .wv-panel-title p { color: #667e8e; font-size: 11px; }
 .wv-canvas-wrap { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #09151e; }
-.wv-canvas-wrap canvas { display: block; cursor: crosshair; }
+.wv-canvas-wrap canvas { display: block; cursor: grab; touch-action: none; }
+.wv-canvas-wrap.dragging canvas { cursor: grabbing; }
 .wv-tooltip { position: absolute; width: 268px; pointer-events: none; padding: 10px 12px; background: rgba(5,12,18,.96); border: 1px solid #416477; box-shadow: 0 12px 35px rgba(0,0,0,.45); z-index: 3; font-size: 11px; }
 .wv-tooltip b, .wv-tooltip span, .wv-tooltip code { display: block; margin: 2px 0; overflow: hidden; text-overflow: ellipsis; }
 .wv-tooltip span { color: #94aab8; }

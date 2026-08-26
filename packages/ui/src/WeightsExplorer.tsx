@@ -5,6 +5,14 @@ import type {
   TensorRecord,
   TensorSample
 } from "@weights-viz/core";
+import {
+  createAddressMapLayout,
+  hitTestAddressMap,
+  isClickGesture,
+  type AddressHit,
+  type AddressMapLayout,
+  type AddressRect
+} from "./address-map";
 import { formatAddress, formatBytes, formatShape } from "./format";
 
 interface WeightsExplorerProps {
@@ -18,20 +26,10 @@ interface WeightsExplorerProps {
   intro?: string;
 }
 
-interface LayoutCell {
-  file: ParsedFile;
-  tensor: TensorRecord;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
 interface HoverInfo {
-  cell: LayoutCell;
+  hit: AddressHit;
   clientX: number;
   clientY: number;
-  chunk?: { start: bigint; end: bigint };
 }
 
 const PALETTE = [
@@ -93,22 +91,6 @@ export function WeightsExplorer({
       setMetadataQuery("");
     }
   }, [activeModel, activeModelId]);
-
-  const visibleModel = useMemo(() => {
-    if (!activeModel || !query.trim()) return activeModel;
-    const needle = query.trim().toLowerCase();
-    return {
-      ...activeModel,
-      files: activeModel.files.map((file) => ({
-        ...file,
-        tensors: file.tensors.filter(
-          (tensor) =>
-            tensor.name.toLowerCase().includes(needle) ||
-            tensor.dtype.toLowerCase().includes(needle)
-        )
-      }))
-    };
-  }, [activeModel, query]);
 
   const requestSample = async () => {
     if (!selected || !onSample) return;
@@ -255,20 +237,19 @@ export function WeightsExplorer({
                 <span>BYTE MAP</span>
                 <h2>{activeModel.name}</h2>
               </div>
-              <p>Area represents on-disk bytes · click a tensor to inspect</p>
+              <p>Addresses run left → right, top → bottom · drag to pan</p>
             </div>
-            {visibleModel && (
-              <WeightMap
-                model={visibleModel}
-                {...(selected ? { selected } : {})}
-                onSelect={(tensor) => {
-                  setSelected(tensor);
-                  setInspectorMode("tensor");
-                  setSample(undefined);
-                  setSampleError(undefined);
-                }}
-              />
-            )}
+            <WeightMap
+              model={activeModel}
+              query={query}
+              {...(selected ? { selected } : {})}
+              onSelect={(tensor) => {
+                setSelected(tensor);
+                setInspectorMode("tensor");
+                setSample(undefined);
+                setSampleError(undefined);
+              }}
+            />
           </div>
 
           <aside className="wv-inspector">
@@ -371,22 +352,44 @@ export function WeightsExplorer({
 
 function WeightMap({
   model,
+  query,
   selected,
   onSelect
 }: {
   model: ParsedModel;
+  query: string;
   selected?: TensorRecord;
   onSelect: (tensor: TensorRecord) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  } | undefined>(undefined);
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [hover, setHover] = useState<HoverInfo>();
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const cells = useMemo(
-    () => layoutModel(model, size.width, size.height),
-    [model, size]
+  const [dragging, setDragging] = useState(false);
+  const layout = useMemo(
+    () => {
+      const needle = query.trim().toLowerCase();
+      return createAddressMapLayout(
+        model,
+        size.width,
+        needle
+          ? (tensor) =>
+              tensor.name.toLowerCase().includes(needle) ||
+              tensor.dtype.toLowerCase().includes(needle)
+          : undefined
+      );
+    },
+    [model, query, size.width]
   );
 
   useEffect(() => {
@@ -405,6 +408,15 @@ function WeightMap({
   }, []);
 
   useEffect(() => {
+    setZoom(1);
+    setOffset({ x: 0, y: 0 });
+  }, [model.id]);
+
+  useEffect(() => {
+    setOffset((current) => clampOffset(current, layout, size, zoom));
+  }, [layout, size, zoom]);
+
+  useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ratio = window.devicePixelRatio || 1;
@@ -419,75 +431,130 @@ function WeightMap({
     context.save();
     context.translate(offset.x, offset.y);
     context.scale(zoom, zoom);
-    drawCells(context, cells, selected, zoom);
+    drawAddressMap(context, layout, selected, zoom, offset, size);
     context.restore();
-  }, [cells, offset, selected, size, zoom]);
+    drawAddressRuler(context, layout, zoom, offset, size);
+  }, [layout, offset, selected, size, zoom]);
 
   const hitTest = (clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return undefined;
     const x = (clientX - rect.left - offset.x) / zoom;
     const y = (clientY - rect.top - offset.y) / zoom;
-    return cells.find(
-      (cell) =>
-        x >= cell.x &&
-        x <= cell.x + cell.width &&
-        y >= cell.y &&
-        y <= cell.y + cell.height
-    );
+    return hitTestAddressMap(layout, x, y);
   };
 
+  const setZoomAt = (nextZoom: number, px: number, py: number) => {
+    const next = Math.min(128, Math.max(1, nextZoom));
+    const nextOffset = {
+      x: px - ((px - offset.x) * next) / zoom,
+      y: py - ((py - offset.y) * next) / zoom
+    };
+    setZoom(next);
+    setOffset(clampOffset(nextOffset, layout, size, next));
+    setHover(undefined);
+  };
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      setZoomAt(
+        zoom * (event.deltaY < 0 ? 1.18 : 0.85),
+        event.clientX - rect.left,
+        event.clientY - rect.top
+      );
+    };
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", handleWheel);
+  }, [layout, offset, size, zoom]);
+
   return (
-    <div className="wv-canvas-wrap" ref={containerRef}>
+    <div
+      className={`wv-canvas-wrap${dragging ? " dragging" : ""}`}
+      ref={containerRef}
+    >
       <canvas
         ref={canvasRef}
-        onClick={(event) => {
-          const cell = hitTest(event.clientX, event.clientY);
-          if (cell) onSelect(cell.tensor);
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          dragRef.current = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            originX: offset.x,
+            originY: offset.y,
+            moved: false
+          };
+          setDragging(true);
+          setHover(undefined);
         }}
-        onMouseMove={(event) => {
-          const cell = hitTest(event.clientX, event.clientY);
-          if (!cell) return setHover(undefined);
-          let chunk: HoverInfo["chunk"];
-          if (zoom >= 2.5 && (cell.tensor.byteSegments?.length ?? 0) <= 1) {
-            const rect = event.currentTarget.getBoundingClientRect();
-            const localX = (event.clientX - rect.left - offset.x) / zoom - cell.x;
-            const columns = Math.max(1, Math.floor(cell.width / 18));
-            const rows = Math.max(1, Math.floor(cell.height / 18));
-            const column = Math.min(columns - 1, Math.max(0, Math.floor(localX / (cell.width / columns))));
-            const localY = (event.clientY - rect.top - offset.y) / zoom - cell.y;
-            const row = Math.min(rows - 1, Math.max(0, Math.floor(localY / (cell.height / rows))));
-            const index = row * columns + column;
-            const count = BigInt(columns * rows);
-            const start = cell.tensor.byteOffset + (cell.tensor.byteLength * BigInt(index)) / count;
-            const end = cell.tensor.byteOffset + (cell.tensor.byteLength * BigInt(index + 1)) / count;
-            chunk = { start, end };
+        onPointerMove={(event) => {
+          const drag = dragRef.current;
+          if (drag?.pointerId === event.pointerId) {
+            const dx = event.clientX - drag.startX;
+            const dy = event.clientY - drag.startY;
+            if (!isClickGesture(0, 0, dx, dy)) drag.moved = true;
+            if (drag.moved) {
+              setOffset(
+                clampOffset(
+                  { x: drag.originX + dx, y: drag.originY + dy },
+                  layout,
+                  size,
+                  zoom
+                )
+              );
+            }
+            return;
           }
+          const hit = hitTest(event.clientX, event.clientY);
+          if (!hit) return setHover(undefined);
           setHover({
-            cell,
+            hit,
             clientX: event.clientX,
-            clientY: event.clientY,
-            ...(chunk ? { chunk } : {})
+            clientY: event.clientY
           });
         }}
-        onMouseLeave={() => setHover(undefined)}
-        onWheel={(event) => {
-          event.preventDefault();
-          const next = Math.min(8, Math.max(1, zoom * (event.deltaY < 0 ? 1.18 : 0.85)));
-          const rect = event.currentTarget.getBoundingClientRect();
-          const px = event.clientX - rect.left;
-          const py = event.clientY - rect.top;
-          setOffset({
-            x: px - ((px - offset.x) * next) / zoom,
-            y: py - ((py - offset.y) * next) / zoom
-          });
-          setZoom(next);
+        onPointerUp={(event) => {
+          const drag = dragRef.current;
+          if (!drag || drag.pointerId !== event.pointerId) return;
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+          if (!drag.moved) {
+            const hit = hitTest(event.clientX, event.clientY);
+            if (hit?.kind === "tensor" && hit.tensor) onSelect(hit.tensor);
+          }
+          dragRef.current = undefined;
+          setDragging(false);
+        }}
+        onPointerCancel={() => {
+          dragRef.current = undefined;
+          setDragging(false);
+        }}
+        onPointerLeave={() => {
+          if (!dragRef.current) setHover(undefined);
         }}
       />
       <div className="wv-zoom">
-        <button onClick={() => setZoom((value) => Math.min(8, value * 1.4))}>+</button>
+        <button
+          aria-label="Zoom out"
+          onClick={() => setZoomAt(zoom / 1.4, size.width / 2, size.height / 2)}
+        >
+          −
+        </button>
         <span>{Math.round(zoom * 100)}%</span>
         <button
+          aria-label="Zoom in"
+          onClick={() => setZoomAt(zoom * 1.4, size.width / 2, size.height / 2)}
+        >
+          +
+        </button>
+        <button
+          aria-label="Reset view"
           onClick={() => {
             setZoom(1);
             setOffset({ x: 0, y: 0 });
@@ -502,17 +569,42 @@ function WeightMap({
             top: Math.min(size.height - 150, Math.max(8, hover.clientY - (canvasRef.current?.getBoundingClientRect().top ?? 0) + 12))
           }}
         >
-          <b>{hover.cell.tensor.name}</b>
-          <span>{hover.cell.tensor.dtype} · {formatShape(hover.cell.tensor.shape)}</span>
-          <span>{formatBytes(hover.cell.tensor.byteLength)}</span>
-          {hover.cell.tensor.byteSegments && hover.cell.tensor.byteSegments.length > 1 ? (
-            <code>{hover.cell.tensor.byteSegments.length} non-contiguous payload ranges</code>
+          {hover.hit.kind === "tensor" && hover.hit.tensor ? (
+            <>
+              <b>{hover.hit.tensor.name}</b>
+              <span>{hover.hit.tensor.dtype} · {formatShape(hover.hit.tensor.shape)}</span>
+              <span>{formatBytes(hover.hit.tensor.byteLength)}</span>
+              <code>Pointer: {formatAddress(hover.hit.address)}</code>
+              <code>
+                Tensor: {formatAddress(hover.hit.start)} → {formatAddress(hover.hit.end)}
+              </code>
+            </>
+          ) : hover.hit.kind === "filtered" && hover.hit.tensor ? (
+            <>
+              <b>{hover.hit.tensor.name} · filtered</b>
+              <span>{hover.hit.tensor.dtype} · {formatShape(hover.hit.tensor.shape)}</span>
+              <code>Pointer: {formatAddress(hover.hit.address)}</code>
+              <code>
+                Tensor: {formatAddress(hover.hit.start)} → {formatAddress(hover.hit.end)}
+              </code>
+            </>
+          ) : hover.hit.kind === "metadata" ? (
+            <>
+              <b>{hover.hit.file.name} · header / metadata</b>
+              <code>Pointer: {formatAddress(hover.hit.address)}</code>
+              <code>
+                Range: {formatAddress(hover.hit.start)} → {formatAddress(hover.hit.end)}
+              </code>
+            </>
           ) : (
-            <code>
-              {formatAddress(hover.chunk?.start ?? hover.cell.tensor.byteOffset)}
-              {" → "}
-              {formatAddress(hover.chunk?.end ?? tensorEnd(hover.cell.tensor))}
-            </code>
+            <>
+              <b>Unmapped / alignment gap</b>
+              <span>{hover.hit.file.name}</span>
+              <code>Pointer: {formatAddress(hover.hit.address)}</code>
+              <code>
+                Gap: {formatAddress(hover.hit.start)} → {formatAddress(hover.hit.end)}
+              </code>
+            </>
           )}
         </div>
       )}
@@ -520,157 +612,213 @@ function WeightMap({
   );
 }
 
-function layoutModel(model: ParsedModel, width: number, height: number): LayoutCell[] {
-  const padding = 8;
-  const fileGap = 12;
-  const availableHeight = height - padding * 2;
-  const totalSize = model.files.reduce((sum, file) => sum + file.size, 0n) || 1n;
-  const cells: LayoutCell[] = [];
-  let fileX = padding;
-  for (const file of model.files) {
-    const fileWidth = Math.max(
-      80,
-      ((width - padding * 2 - fileGap * (model.files.length - 1)) *
-        ratio(file.size, totalSize))
-    );
-    layoutTensors(
-      file,
-      [...file.tensors].sort((a, b) =>
-        a.byteLength === b.byteLength ? 0 : a.byteLength > b.byteLength ? -1 : 1
-      ),
-      { x: fileX, y: padding + 24, width: fileWidth, height: Math.max(1, availableHeight - 24) },
-      cells,
-      false
-    );
-    fileX += fileWidth + fileGap;
-  }
-  return cells;
-}
-
-function layoutTensors(
-  file: ParsedFile,
-  tensors: TensorRecord[],
-  rect: { x: number; y: number; width: number; height: number },
-  output: LayoutCell[],
-  vertical: boolean
-): void {
-  if (!tensors.length) return;
-  if (tensors.length === 1) {
-    const tensor = tensors[0];
-    if (tensor) output.push({ file, tensor, ...rect });
-    return;
-  }
-  const total = tensors.reduce((sum, tensor) => sum + tensor.byteLength, 0n) || 1n;
-  let split = 1;
-  let leftSize = tensors[0]?.byteLength ?? 0n;
-  while (
-    split < tensors.length - 1 &&
-    leftSize + (tensors[split]?.byteLength ?? 0n) <= total / 2n
-  ) {
-    leftSize += tensors[split]?.byteLength ?? 0n;
-    split++;
-  }
-  const fraction = Math.min(0.95, Math.max(0.05, ratio(leftSize, total)));
-  if (vertical) {
-    const firstWidth = rect.width * fraction;
-    layoutTensors(file, tensors.slice(0, split), { ...rect, width: firstWidth }, output, !vertical);
-    layoutTensors(
-      file,
-      tensors.slice(split),
-      { ...rect, x: rect.x + firstWidth, width: rect.width - firstWidth },
-      output,
-      !vertical
-    );
-  } else {
-    const firstHeight = rect.height * fraction;
-    layoutTensors(file, tensors.slice(0, split), { ...rect, height: firstHeight }, output, !vertical);
-    layoutTensors(
-      file,
-      tensors.slice(split),
-      { ...rect, y: rect.y + firstHeight, height: rect.height - firstHeight },
-      output,
-      !vertical
-    );
-  }
-}
-
-function ratio(part: bigint, whole: bigint): number {
-  if (whole <= 0n) return 0;
-  return Number((part * 1_000_000n) / whole) / 1_000_000;
-}
-
 function tensorEnd(tensor: TensorRecord): bigint {
   const last = tensor.byteSegments?.at(-1);
   return last ? last.byteOffset + last.byteLength : tensor.byteOffset + tensor.byteLength;
 }
 
-function drawCells(
+function drawAddressMap(
   context: CanvasRenderingContext2D,
-  cells: LayoutCell[],
+  layout: AddressMapLayout,
   selected: TensorRecord | undefined,
-  zoom: number
+  zoom: number,
+  offset: { x: number; y: number },
+  viewport: { width: number; height: number }
 ) {
   const dtypeColors = new Map<string, string>();
   let colorIndex = 0;
-  for (const cell of cells) {
-    let color = dtypeColors.get(cell.tensor.dtype);
-    if (!color) {
-      color = PALETTE[colorIndex++ % PALETTE.length] ?? "#6ee7ff";
-      dtypeColors.set(cell.tensor.dtype, color);
+  const visibleTop = -offset.y / zoom;
+  const visibleBottom = (viewport.height - offset.y) / zoom;
+
+  for (const fileLayout of layout.files) {
+    const gridBottom =
+      fileLayout.gridY + fileLayout.rowCount * fileLayout.rowHeight;
+    if (gridBottom < visibleTop || fileLayout.gridY > visibleBottom) continue;
+
+    context.fillStyle = "#0b1923";
+    context.fillRect(
+      fileLayout.gridX,
+      fileLayout.gridY,
+      fileLayout.gridWidth,
+      fileLayout.rowCount * fileLayout.rowHeight
+    );
+
+    for (const span of fileLayout.spans) {
+      if (!span.visible) continue;
+      const color =
+        span.kind === "metadata"
+          ? "#324b5a"
+          : colorForTensor(span.tensor!, dtypeColors, () => colorIndex++);
+      context.fillStyle = span.kind === "metadata" ? `${color}d8` : `${color}b8`;
+      for (const rect of span.rects) {
+        if (!isVisible(rect, visibleTop, visibleBottom)) continue;
+        context.fillRect(rect.x, rect.y, rect.width, rect.height);
+      }
     }
-    context.fillStyle = `${color}b8`;
-    context.fillRect(cell.x + 1, cell.y + 1, Math.max(0, cell.width - 2), Math.max(0, cell.height - 2));
-    if (zoom >= 2.5 && cell.height > 15) {
-      context.strokeStyle = "rgba(5, 10, 20, .35)";
-      context.lineWidth = 0.5 / zoom;
-      for (let x = cell.x + 18; x < cell.x + cell.width; x += 18) {
+
+    context.strokeStyle = "rgba(110, 231, 255, .14)";
+    context.lineWidth = 1 / zoom;
+    for (let column = 0; column <= fileLayout.columns; column++) {
+      const x =
+        fileLayout.gridX +
+        (column * fileLayout.gridWidth) / fileLayout.columns;
+      context.beginPath();
+      context.moveTo(x, fileLayout.gridY);
+      context.lineTo(x, gridBottom);
+      context.stroke();
+    }
+    for (let row = 0; row <= fileLayout.rowCount; row++) {
+      const y = fileLayout.gridY + row * fileLayout.rowHeight;
+      if (y >= visibleTop && y <= visibleBottom) {
         context.beginPath();
-        context.moveTo(x, cell.y);
-        context.lineTo(x, cell.y + cell.height);
+        context.moveTo(fileLayout.gridX, y);
+        context.lineTo(fileLayout.gridX + fileLayout.gridWidth, y);
         context.stroke();
       }
-      for (let y = cell.y + 18; y < cell.y + cell.height; y += 18) {
-        context.beginPath();
-        context.moveTo(cell.x, y);
-        context.lineTo(cell.x + cell.width, y);
-        context.stroke();
+    }
+
+    for (const span of fileLayout.spans) {
+      if (!span.tensor || !span.visible) continue;
+      if (selected?.id === span.tensor.id) {
+        context.strokeStyle = "#ffffff";
+        context.lineWidth = 2 / zoom;
+        for (const rect of span.rects) {
+          if (isVisible(rect, visibleTop, visibleBottom)) {
+            context.strokeRect(rect.x, rect.y, rect.width, rect.height);
+          }
+        }
       }
-    }
-    if (selected?.id === cell.tensor.id) {
-      context.strokeStyle = "#ffffff";
-      context.lineWidth = 2 / zoom;
-      context.strokeRect(cell.x, cell.y, cell.width, cell.height);
-    }
-    if (cell.height > 28 && cell.width > 100) {
-      context.fillStyle = "#071019";
-      context.font = `600 ${Math.max(8, 11 / Math.sqrt(zoom))}px ui-monospace, monospace`;
-      context.fillText(
-        cell.tensor.name.length > 34 ? `${cell.tensor.name.slice(0, 31)}…` : cell.tensor.name,
-        cell.x + 7,
-        cell.y + 16,
-        cell.width - 12
-      );
-      context.font = `${Math.max(7, 9 / Math.sqrt(zoom))}px ui-monospace, monospace`;
-      context.fillText(
-        `${cell.tensor.dtype} · ${formatBytes(cell.tensor.byteLength)}`,
-        cell.x + 7,
-        cell.y + 29,
-        cell.width - 12
+      drawTensorLabel(
+        context,
+        span.tensor,
+        span.rects,
+        zoom,
+        visibleTop,
+        visibleBottom
       );
     }
   }
-  const files = new Map<string, LayoutCell[]>();
-  for (const cell of cells) {
-    const group = files.get(cell.file.id) ?? [];
-    group.push(cell);
-    files.set(cell.file.id, group);
+}
+
+function drawAddressRuler(
+  context: CanvasRenderingContext2D,
+  layout: AddressMapLayout,
+  zoom: number,
+  offset: { x: number; y: number },
+  viewport: { width: number; height: number }
+) {
+  context.save();
+  context.fillStyle = "rgba(7, 16, 25, .94)";
+  context.fillRect(0, 0, 104, viewport.height);
+  context.strokeStyle = "#1e303d";
+  context.beginPath();
+  context.moveTo(103.5, 0);
+  context.lineTo(103.5, viewport.height);
+  context.stroke();
+  context.textBaseline = "middle";
+
+  for (const fileLayout of layout.files) {
+    const headerY = offset.y + (fileLayout.gridY - 15) * zoom;
+    if (headerY > -20 && headerY < viewport.height + 20) {
+      context.fillStyle = "#d8e3ec";
+      context.font = "600 11px ui-monospace, monospace";
+      context.fillText(fileLayout.file.name, 8, headerY, viewport.width - 16);
+      context.fillStyle = "#688091";
+      context.font = "9px ui-monospace, monospace";
+      context.fillText(
+        `${formatBytes(fileLayout.bytesPerRow)} / row`,
+        Math.max(112, viewport.width - 130),
+        headerY
+      );
+    }
+
+    context.fillStyle = "#7890a0";
+    context.font = "9px ui-monospace, monospace";
+    for (let row = 0; row < fileLayout.rowCount; row++) {
+      const y =
+        offset.y +
+        (fileLayout.gridY + row * fileLayout.rowHeight) * zoom +
+        (fileLayout.rowHeight * zoom) / 2;
+      if (y < -10 || y > viewport.height + 10) continue;
+      context.fillText(
+        formatAddress(BigInt(row) * fileLayout.bytesPerRow),
+        8,
+        y,
+        90
+      );
+    }
   }
-  context.fillStyle = "#d8e3ec";
-  context.font = "600 10px ui-monospace, monospace";
-  for (const group of files.values()) {
-    const first = group[0];
-    if (first) context.fillText(first.file.name, first.x + 2, 18, first.width - 4);
+  context.restore();
+}
+
+function drawTensorLabel(
+  context: CanvasRenderingContext2D,
+  tensor: TensorRecord,
+  rects: AddressRect[],
+  zoom: number,
+  visibleTop: number,
+  visibleBottom: number
+) {
+  const rect = rects
+    .filter((candidate) => isVisible(candidate, visibleTop, visibleBottom))
+    .sort((a, b) => b.width - a.width)[0];
+  if (!rect || rect.width * zoom < 110 || rect.height * zoom < 14) return;
+
+  const fontSize = 11 / zoom;
+  const padding = 6 / zoom;
+  context.fillStyle = "#071019";
+  context.font = `600 ${fontSize}px ui-monospace, monospace`;
+  context.textBaseline = "top";
+  context.fillText(
+    tensor.name.length > 48 ? `${tensor.name.slice(0, 45)}…` : tensor.name,
+    rect.x + padding,
+    rect.y + 3 / zoom,
+    rect.width - padding * 2
+  );
+  if (rect.height * zoom >= 28) {
+    context.font = `${9 / zoom}px ui-monospace, monospace`;
+    context.fillText(
+      `${tensor.dtype} · ${formatBytes(tensor.byteLength)}`,
+      rect.x + padding,
+      rect.y + 16 / zoom,
+      rect.width - padding * 2
+    );
   }
+}
+
+function colorForTensor(
+  tensor: TensorRecord,
+  colors: Map<string, string>,
+  nextIndex: () => number
+): string {
+  let color = colors.get(tensor.dtype);
+  if (!color) {
+    color = PALETTE[nextIndex() % PALETTE.length] ?? "#6ee7ff";
+    colors.set(tensor.dtype, color);
+  }
+  return color;
+}
+
+function isVisible(
+  rect: AddressRect,
+  visibleTop: number,
+  visibleBottom: number
+): boolean {
+  return rect.y + rect.height >= visibleTop && rect.y <= visibleBottom;
+}
+
+function clampOffset(
+  offset: { x: number; y: number },
+  layout: AddressMapLayout,
+  viewport: { width: number; height: number },
+  zoom: number
+) {
+  const minX = Math.min(0, viewport.width - layout.width * zoom);
+  const minY = Math.min(0, viewport.height - layout.contentHeight * zoom);
+  return {
+    x: Math.min(0, Math.max(minX, offset.x)),
+    y: Math.min(0, Math.max(minY, offset.y))
+  };
 }
 
 function SummaryRow({ label, value }: { label: string; value: string }) {

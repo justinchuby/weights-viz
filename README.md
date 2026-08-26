@@ -101,8 +101,8 @@ as `v0.1.0` create a GitHub release containing the VSIX.
 Offsets and lengths use `bigint`, so multi-gigabyte files retain exact
 addresses. Parsers perform bounded reads, validate declared ranges, and cap
 metadata, strings, arrays, and remote downloads. Parsing runs in a web worker in
-the browser. The byte map is drawn on Canvas and only adds a fixed grid at
-higher zoom levels rather than creating one DOM node per weight.
+the browser. The byte map is drawn on Canvas with visible-row culling rather
+than creating one DOM node per weight, including for files up to 2 TiB.
 
 VS Code uses true ranged reads for local filesystem files. Virtual filesystem
 providers do not expose a ranged-read API; files above 64 MiB must be opened
@@ -110,14 +110,18 @@ from a local filesystem.
 
 ## Current visualization model
 
-The map uses three semantic levels:
+Each file is an independent linear address space. Addresses run left to right
+and then wrap onto the next row, with an adaptive power-of-two row capacity.
+The 64-column background grid is only an address scale: tensor fills retain
+their exact fractional start and end positions, can cross rows, and leave
+alignment gaps visible. Multiple files are stacked vertically instead of being
+assigned synthetic contiguous addresses.
 
-1. Model files.
-2. Tensors sized by their on-disk byte length and colored by dtype.
-3. Fixed byte regions shown after zooming in.
-
-Hovering reports the tensor or region byte range. Selecting a tensor opens its
-shape, storage, exact addresses, and value-sampling controls in the inspector.
+Hovering reports the exact pointer address and the surrounding tensor,
+metadata, or unmapped range. Drag the map with the primary pointer button to
+pan; wheel zoom remains centered under the pointer. Selecting a tensor opens
+its shape, storage, exact addresses, and value-sampling controls in the
+inspector.
 The Metadata tab exposes file-level model metadata, including searchable GGUF
 KV entries such as architecture, model name, quantization details, and
 tokenizer configuration.
