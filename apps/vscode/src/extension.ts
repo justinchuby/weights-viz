@@ -298,6 +298,19 @@ export function activate(context: vscode.ExtensionContext): void {
       panel.webview.html = webviewHtml(panel.webview, context.extensionUri);
       await connection;
     }),
+    vscode.commands.registerCommand(
+      "weightsViz.visualize",
+      async (uri: vscode.Uri | undefined) => {
+        if (!uri) {
+          throw new Error("Visualize Weights requires a model file.");
+        }
+        await vscode.commands.executeCommand(
+          "vscode.openWith",
+          uri,
+          "weightsViz.viewer"
+        );
+      }
+    ),
     vscode.commands.registerCommand("weightsViz.openUrl", async () => {
       const url = await vscode.window.showInputBox({
         title: "Open model URL",

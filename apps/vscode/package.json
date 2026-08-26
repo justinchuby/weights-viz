@@ -27,7 +27,12 @@
     "vscode": "^1.95.0"
   },
   "categories": ["Visualization"],
-  "activationEvents": ["onCustomEditor:weightsViz.viewer", "onCommand:weightsViz.openUrl", "onCommand:weightsViz.openFiles"],
+  "activationEvents": [
+    "onCustomEditor:weightsViz.viewer",
+    "onCommand:weightsViz.openUrl",
+    "onCommand:weightsViz.openFiles",
+    "onCommand:weightsViz.visualize"
+  ],
   "main": "./dist/extension.cjs",
   "contributes": {
     "customEditors": [
@@ -51,8 +56,21 @@
       {
         "command": "weightsViz.openUrl",
         "title": "Weights Viz: Open Model URL"
+      },
+      {
+        "command": "weightsViz.visualize",
+        "title": "Visualize Weights"
       }
-    ]
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "weightsViz.visualize",
+          "when": "resourceExtname == .gguf || resourceExtname == .safetensors || resourceExtname == .onnx || resourceFilename =~ /\\.safetensors\\.index\\.json$/ || resourceLangId == textproto",
+          "group": "navigation@10"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "pnpm run build:webview && esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs",

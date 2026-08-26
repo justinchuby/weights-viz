@@ -7,6 +7,8 @@ Code.
 
 - Open `.gguf`, `.safetensors`, `.onnx`, and `.safetensors.index.json` files
   with the **Weights Visualization** custom editor by default.
+- Right-click a supported model or `textproto` file in the Explorer and choose
+  **Visualize Weights** to open the viewer explicitly.
 - View a Canvas byte map ordered by exact file address, with visible alignment
   gaps and drag-to-pan navigation.
 - Inspect tensor names, shapes, dtypes, exact offsets, lengths, and storage.
