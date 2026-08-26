@@ -90,23 +90,11 @@ function App() {
 
   return (
     <>
-      <input
-        id="weights-viz-file-input"
-        className="wv-file-input"
-        type="file"
-        multiple
-        accept=".gguf,.safetensors,.onnx,.json,application/octet-stream"
-        onChange={(event) => {
-          const files = Array.from(event.currentTarget.files ?? []);
-          event.currentTarget.value = "";
-          void loadFiles(files);
-        }}
-      />
       <WeightsExplorer
         models={models}
         busy={busy}
         {...(error ? { error } : {})}
-        fileInputId="weights-viz-file-input"
+        onFilesSelected={(files) => void loadFiles(files)}
         onOpenUrl={(url) => void loadUrl(url)}
         onSample={(tensor) =>
           request<TensorSample>({ type: "sample", tensor, maxValues: 256 })

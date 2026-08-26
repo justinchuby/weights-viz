@@ -9,7 +9,6 @@
 html, body, #root { margin: 0; min-height: 100%; background: #071019; }
 button, input { font: inherit; }
 button { color: inherit; }
-.wv-file-input { position: fixed; width: 1px; height: 1px; left: -10000px; opacity: 0; pointer-events: none; }
 
 .wv-shell { min-height: 100vh; background:
   radial-gradient(circle at 75% -15%, rgba(110,231,255,.13), transparent 32rem),
@@ -28,6 +27,8 @@ button { color: inherit; }
 .wv-button.primary { background: #6ee7ff; color: #061017; border-color: #6ee7ff; }
 .wv-button.large { padding: 12px 20px; }
 .wv-button.full { width: 100%; margin: 18px 0 8px; }
+.wv-file-picker { position: relative; overflow: hidden; }
+.wv-file-picker input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .001; cursor: pointer; font-size: 100px; }
 .wv-progress { height: 2px; overflow: hidden; background: #10232f; }
 .wv-progress span { display: block; height: 100%; width: 35%; background: #6ee7ff; animation: wv-load 1.2s infinite ease-in-out; }
 @keyframes wv-load { from { transform: translateX(-110%); } to { transform: translateX(310%); } }

@@ -12,7 +12,7 @@ interface WeightsExplorerProps {
   busy?: boolean;
   error?: string;
   onChooseFiles?: () => void;
-  fileInputId?: string;
+  onFilesSelected?: (files: File[]) => void;
   onOpenUrl?: (url: string) => void;
   onSample?: (tensor: TensorRecord) => Promise<TensorSample>;
   intro?: string;
@@ -50,7 +50,7 @@ export function WeightsExplorer({
   busy = false,
   error,
   onChooseFiles,
-  fileInputId,
+  onFilesSelected,
   onOpenUrl,
   onSample,
   intro
@@ -115,10 +115,8 @@ export function WeightsExplorer({
           <h1>Weights <span>Viz</span></h1>
         </div>
         <div className="wv-actions">
-          {fileInputId ? (
-            <label className="wv-button primary" htmlFor={fileInputId}>
-              Open files
-            </label>
+          {onFilesSelected ? (
+            <FilePicker onFilesSelected={onFilesSelected}>Open files</FilePicker>
           ) : onChooseFiles ? (
             <button className="wv-button primary" onClick={onChooseFiles}>
               Open files
@@ -158,10 +156,10 @@ export function WeightsExplorer({
               {intro ??
                 "Drop GGUF, SafeTensors, or ONNX files here. Files stay on this device; remote models use byte-range requests."}
             </p>
-            {fileInputId ? (
-              <label className="wv-button primary large" htmlFor={fileInputId}>
+            {onFilesSelected ? (
+              <FilePicker large onFilesSelected={onFilesSelected}>
                 Choose model files
-              </label>
+              </FilePicker>
             ) : onChooseFiles ? (
               <button className="wv-button primary large" onClick={onChooseFiles}>
                 Choose model files
@@ -643,6 +641,33 @@ function drawCells(
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return <div><span>{label}</span><b>{value}</b></div>;
+}
+
+function FilePicker({
+  children,
+  large = false,
+  onFilesSelected
+}: {
+  children: string;
+  large?: boolean;
+  onFilesSelected: (files: File[]) => void;
+}) {
+  return (
+    <span className={`wv-file-picker wv-button primary${large ? " large" : ""}`}>
+      <span aria-hidden="true">{children}</span>
+      <input
+        type="file"
+        multiple
+        aria-label={children}
+        accept=".gguf,.safetensors,.onnx,.json,application/octet-stream"
+        onChange={(event) => {
+          const files = Array.from(event.currentTarget.files ?? []);
+          event.currentTarget.value = "";
+          if (files.length) onFilesSelected(files);
+        }}
+      />
+    </span>
+  );
 }
 
 function MetadataInspector({
