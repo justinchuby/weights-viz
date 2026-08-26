@@ -17,6 +17,8 @@
 - Increase the default map resolution to approximately 128 rows per file.
 - Infer ONNX external-data layouts from the manifest without requiring the
   referenced `.data` files.
+- Keep the Canvas and inspector within the VS Code webview when its width or
+  height shrinks.
 
 ## 0.1.0
 
