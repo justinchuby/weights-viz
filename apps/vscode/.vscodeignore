@@ -4,4 +4,5 @@ tsconfig.json
 vite.config.ts
 node_modules/**
 dist/webview/src/**
+media/icon.svg
 **/*.map

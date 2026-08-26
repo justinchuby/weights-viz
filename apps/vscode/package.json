@@ -6,6 +6,7 @@
   "private": true,
   "type": "module",
   "publisher": "justinchuby",
+  "icon": "media/icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
