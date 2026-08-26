@@ -32,8 +32,12 @@ describe("OnnxParser", () => {
     const bytes = toUint8Array(
       concat(
         varintField(1, 9n),
-        stringField(3, "synthetic"),
-        messageField(8, concat(stringField(2, "main"), tensor))
+        stringField(2, "synthetic"),
+        stringField(3, "1.2.3"),
+        stringField(4, "ai.weights-viz"),
+        varintField(5, 42n),
+        stringField(6, "model documentation"),
+        messageField(7, concat(stringField(2, "main"), tensor))
       )
     );
     const rawDataOffset = requireMark(bytes.marks, "rawData");
@@ -67,11 +71,19 @@ describe("OnnxParser", () => {
         rawData: { present: boolean; offset?: bigint; length: bigint };
       }>;
       irVersion: bigint;
+      modelVersion: bigint;
       producerName: string;
+      producerVersion: string;
+      domain: string;
+      docString: string;
     };
     expect(metadata.graphName).toBe("main");
     expect(metadata.irVersion).toBe(9n);
+    expect(metadata.modelVersion).toBe(42n);
     expect(metadata.producerName).toBe("synthetic");
+    expect(metadata.producerVersion).toBe("1.2.3");
+    expect(metadata.domain).toBe("ai.weights-viz");
+    expect(metadata.docString).toBe("model documentation");
     expect(metadata.initializers[0]).toMatchObject({
       dataLocation: 0,
       dataLocationName: "DEFAULT",
@@ -104,7 +116,7 @@ describe("OnnxParser", () => {
         "externalTensor"
       )
     );
-    const bytes = toUint8Array(concat(messageField(8, externalTensor)));
+    const bytes = toUint8Array(concat(messageField(7, externalTensor)));
     const tensorOffset = requireMark(bytes.marks, "externalTensor");
 
     const parsed = await new OnnxParser().parse(new MemorySource("external.onnx", bytes.bytes));
@@ -162,7 +174,7 @@ describe("OnnxParser", () => {
         stringField(8, "typed_weight")
       )
     );
-    const bytes = toUint8Array(concat(messageField(8, tensor)));
+    const bytes = toUint8Array(concat(messageField(7, tensor)));
 
     const parsed = await new OnnxParser().parse(new MemorySource("typed.onnx", bytes.bytes));
     expect(parsed.tensors[0]).toMatchObject({
@@ -203,7 +215,7 @@ describe("OnnxParser", () => {
         )
       );
       const bytes = toUint8Array(
-        concat(messageField(8, concat(...tensors)))
+        concat(messageField(7, concat(...tensors)))
       );
 
       const parsed = await new OnnxParser().parse(
@@ -219,7 +231,7 @@ describe("OnnxParser", () => {
 
   it("rejects malformed length-delimited protobuf fields", async () => {
     const malformed = Uint8Array.from([
-      ...encodeVarint((8 << 3) | 2),
+      ...encodeVarint((7 << 3) | 2),
       4,
       ...encodeVarint((2 << 3) | 2),
       10,

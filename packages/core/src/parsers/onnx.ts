@@ -170,42 +170,42 @@ function parseModelProto(bytes: Uint8Array, fileId: string): ParsedOnnxModel {
         offset = value.next;
         break;
       }
-      case 3: {
+      case 2: {
         expectWireType(wireType, 2, offset);
         const range = readLengthDelimitedRange(bytes, offset, bytes.byteLength);
         model.producerName = decodeUtf8(bytes, range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
-      case 4: {
+      case 3: {
         expectWireType(wireType, 2, offset);
         const range = readLengthDelimitedRange(bytes, offset, bytes.byteLength);
         model.producerVersion = decodeUtf8(bytes, range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
-      case 5: {
+      case 4: {
         expectWireType(wireType, 2, offset);
         const range = readLengthDelimitedRange(bytes, offset, bytes.byteLength);
         model.domain = decodeUtf8(bytes, range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
-      case 6: {
+      case 5: {
         expectWireType(wireType, 0, offset);
         const value = readVarint(bytes, offset, bytes.byteLength);
         model.modelVersion = asSignedInt64(value.value);
         offset = value.next;
         break;
       }
-      case 7: {
+      case 6: {
         expectWireType(wireType, 2, offset);
         const range = readLengthDelimitedRange(bytes, offset, bytes.byteLength);
         model.docString = decodeUtf8(bytes, range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
-      case 8: {
+      case 7: {
         expectWireType(wireType, 2, offset);
         const range = readLengthDelimitedRange(bytes, offset, bytes.byteLength);
         const graph = parseGraphProto(bytes, range.valueStart, range.valueEnd, fileId, 1);
