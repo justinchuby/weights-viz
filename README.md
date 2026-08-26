@@ -123,6 +123,9 @@ bottom-right controls. The 64-column background grid is only an address scale:
 tensor fills retain their exact fractional start and end positions, can cross
 rows, and leave alignment gaps visible. Multiple files are stacked vertically
 instead of being assigned synthetic contiguous addresses.
+Tensor hue represents dtype, while subtle shade variations distinguish inferred
+roles such as attention, MLP/expert, embedding/output, normalization/bias, and
+convolution.
 
 Hovering reports the exact pointer address and the surrounding tensor,
 metadata, or unmapped range. Drag the map with the primary pointer button to

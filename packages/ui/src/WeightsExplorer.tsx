@@ -19,6 +19,11 @@ import {
   formatParameterCount,
   formatShape
 } from "./format";
+import {
+  classifyTensorRole,
+  colorForTensorRole,
+  tensorRoleLabel
+} from "./tensor-role";
 
 interface WeightsExplorerProps {
   models: ParsedModel[];
@@ -243,6 +248,7 @@ export function WeightsExplorer({
                       {dtype}
                     </span>
                   ))}
+                <small>shade = tensor role</small>
               </div>
             </div>
             <WeightMap
@@ -319,6 +325,10 @@ export function WeightsExplorer({
                     value={formatParameterCount(selected.shape)}
                   />
                   <Detail label="Size" value={formatBytes(selected.byteLength)} />
+                  <Detail
+                    label="Role"
+                    value={tensorRoleLabel(classifyTensorRole(selected.name))}
+                  />
                   <Detail
                     label={selected.storage === "external" ? "External start" : "Start"}
                     value={formatAddress(selected.byteOffset)}
@@ -662,7 +672,10 @@ function WeightMap({
           {hover.hit.kind === "tensor" && hover.hit.tensor ? (
             <>
               <b>{hover.hit.tensor.name}</b>
-              <span>{hover.hit.tensor.dtype} · {formatShape(hover.hit.tensor.shape)}</span>
+              <span>
+                {tensorRoleLabel(classifyTensorRole(hover.hit.tensor.name))} ·{" "}
+                {hover.hit.tensor.dtype} · {formatShape(hover.hit.tensor.shape)}
+              </span>
               <span>
                 {formatParameterCount(hover.hit.tensor.shape)} params ·{" "}
                 {formatBytes(hover.hit.tensor.byteLength)}
@@ -675,7 +688,10 @@ function WeightMap({
           ) : hover.hit.kind === "filtered" && hover.hit.tensor ? (
             <>
               <b>{hover.hit.tensor.name} · filtered</b>
-              <span>{hover.hit.tensor.dtype} · {formatShape(hover.hit.tensor.shape)}</span>
+              <span>
+                {tensorRoleLabel(classifyTensorRole(hover.hit.tensor.name))} ·{" "}
+                {hover.hit.tensor.dtype} · {formatShape(hover.hit.tensor.shape)}
+              </span>
               <span>
                 {formatParameterCount(hover.hit.tensor.shape)} params ·{" "}
                 {formatBytes(hover.hit.tensor.byteLength)}
@@ -978,7 +994,7 @@ function drawTensorLabel(
     context.fillText(
       fitCanvasText(
         context,
-        `${tensor.dtype} · ${formatBytes(tensor.byteLength)}`,
+        `${tensorRoleLabel(classifyTensorRole(tensor.name))} · ${tensor.dtype} · ${formatBytes(tensor.byteLength)}`,
         availableWidth
       ),
       rect.x + padding,
@@ -1081,7 +1097,7 @@ function colorForTensor(
     color = PALETTE[nextIndex() % PALETTE.length] ?? "#6ee7ff";
     colors.set(tensor.dtype, color);
   }
-  return color;
+  return colorForTensorRole(color, classifyTensorRole(tensor.name));
 }
 
 function isVisible(
