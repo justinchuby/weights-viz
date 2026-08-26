@@ -96,26 +96,24 @@ export function materializeOnnxModel(
 
   for (const [location, tensors] of groups) {
     const source = findOnnxExternalSource(location, sources);
-    if (!source) {
-      diagnostics.push({
-        severity: "error",
-        message: `Missing ONNX external data file: ${location}`
-      });
-      continue;
-    }
-    usedSourceIds.add(source.id);
+    if (source) usedSourceIds.add(source.id);
+    const file = source ?? {
+      id: `${manifest.id}:external:${location}`,
+      name: location,
+      size: inferOnnxExternalFileSize(tensors, diagnostics)
+    };
     files.push({
-      id: source.id,
+      id: file.id,
       name: location,
       format: "onnx",
-      size: source.size,
+      size: file.size,
       metadata: {
         ...manifest.metadata,
-        onnxContainer: manifest.name,
-        onnxContainerSize: manifest.size,
-        externalDataFile: location
+        onnx_container: manifest.name,
+        onnx_container_size: manifest.size,
+        external_data_file: location
       },
-      tensors: mapExternalTensors(tensors, source, diagnostics),
+      tensors: mapExternalTensors(tensors, file, diagnostics),
       diagnostics: []
     });
   }
@@ -144,7 +142,7 @@ function findOnnxExternalSource(
 
 function mapExternalTensors(
   tensors: TensorRecord[],
-  source: RandomAccessSource,
+  source: Pick<RandomAccessSource, "id" | "name" | "size">,
   diagnostics: Diagnostic[]
 ): TensorRecord[] {
   const sorted = [...tensors].sort((left, right) =>
@@ -182,6 +180,38 @@ function mapExternalTensors(
     });
   }
   return mapped;
+}
+
+function inferOnnxExternalFileSize(
+  tensors: TensorRecord[],
+  diagnostics: Diagnostic[]
+): bigint {
+  const sorted = [...tensors].sort((left, right) =>
+    compareBigInt(left.externalOffset ?? 0n, right.externalOffset ?? 0n)
+  );
+  let size = 0n;
+  for (let index = 0; index < sorted.length; index += 1) {
+    const tensor = sorted[index]!;
+    const byteOffset = tensor.externalOffset ?? 0n;
+    const nextOffset = sorted[index + 1]?.externalOffset;
+    const byteLength =
+      tensor.externalLength ??
+      inferOnnxTensorByteLength(tensor) ??
+      (nextOffset !== undefined && nextOffset >= byteOffset
+        ? nextOffset - byteOffset
+        : undefined);
+    if (byteOffset < 0n || byteLength === undefined || byteLength < 0n) {
+      diagnostics.push({
+        severity: "error",
+        message: `Cannot infer the external byte range for ONNX tensor ${
+          tensor.name || tensor.id
+        }`
+      });
+      continue;
+    }
+    size = maxBigInt(size, byteOffset + byteLength);
+  }
+  return size;
 }
 
 function inferOnnxTensorByteLength(tensor: TensorRecord): bigint | undefined {
@@ -226,4 +256,8 @@ const ONNX_DTYPE_BITS: Readonly<Record<string, number>> = {
 
 function compareBigInt(left: bigint, right: bigint): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function maxBigInt(left: bigint, right: bigint): bigint {
+  return left > right ? left : right;
 }

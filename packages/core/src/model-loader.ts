@@ -6,10 +6,7 @@ import {
 } from "./data-source";
 import { detectFormat } from "./detect";
 import { ParseError } from "./errors";
-import {
-  materializeOnnxModel,
-  onnxExternalLocations
-} from "./onnx-external";
+import { materializeOnnxModel } from "./onnx-external";
 import { GgufParser } from "./parsers/gguf";
 import { OnnxParser } from "./parsers/onnx";
 import { SafeTensorsParser } from "./parsers/safetensors";
@@ -121,24 +118,7 @@ async function loadRemoteOnnx(
     manifestSource,
     signal ? { signal } : {}
   );
-  const externalSources: RandomAccessSource[] = [];
-  for (const location of onnxExternalLocations(manifest)) {
-    const externalUrl = new URL(location, url);
-    const manifestUrl = new URL(url);
-    if (
-      externalUrl.origin !== manifestUrl.origin ||
-      !["http:", "https:"].includes(externalUrl.protocol)
-    ) {
-      throw new ParseError(`Unsafe ONNX external data URL: ${externalUrl}`);
-    }
-    const source = await HttpRangeSource.create(
-      externalUrl.toString(),
-      signal ? { signal } : {}
-    );
-    externalSources.push(source);
-    onSource?.(source);
-  }
-  return materializeOnnxModel(manifest, externalSources).model;
+  return materializeOnnxModel(manifest, []).model;
 }
 
 export function normalizeModelUrl(rawUrl: string): string {

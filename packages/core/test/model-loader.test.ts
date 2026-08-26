@@ -116,15 +116,23 @@ describe("loadSources", () => {
     expect(models[0]?.diagnostics).toEqual([]);
   });
 
-  it("reports a missing ONNX external data file", async () => {
+  it("infers ONNX external layouts without opening the data file", async () => {
     const models = await loadSources([
       externalOnnx("model.onnx.data", 0n, 16n)
     ]);
 
-    expect(models[0]?.files).toEqual([]);
-    expect(models[0]?.diagnostics[0]?.message).toContain(
-      "Missing ONNX external data file"
-    );
+    expect(models[0]?.files).toHaveLength(1);
+    expect(models[0]?.files[0]).toMatchObject({
+      name: "model.onnx.data",
+      size: 16n
+    });
+    expect(models[0]?.files[0]?.tensors[0]).toMatchObject({
+      name: "weight",
+      byteOffset: 0n,
+      byteLength: 16n,
+      storage: "external"
+    });
+    expect(models[0]?.diagnostics).toEqual([]);
   });
 
   it("rejects unsafe ONNX external locations", () => {

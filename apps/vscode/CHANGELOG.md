@@ -15,6 +15,8 @@
 - Add wheel/pinch navigation and a synchronized vertical map scrollbar.
 - Add editor-style previous/next tensor search navigation.
 - Increase the default map resolution to approximately 128 rows per file.
+- Infer ONNX external-data layouts from the manifest without requiring the
+  referenced `.data` files.
 
 ## 0.1.0
 
