@@ -443,7 +443,7 @@ function WeightMap({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ratio = window.devicePixelRatio || 1;
+    const ratio = Math.max(window.devicePixelRatio || 1, 2);
     canvas.width = Math.floor(size.width * ratio);
     canvas.height = Math.floor(size.height * ratio);
     canvas.style.width = `${size.width}px`;
@@ -458,7 +458,7 @@ function WeightMap({
     context.scale(zoom, zoom);
     drawAddressMap(context, layout, selected, zoom, offset, size, theme, ratio);
     context.restore();
-    drawAddressRuler(context, layout, zoom, offset, size, theme);
+    drawAddressRulerBackground(context, size, theme, ratio);
   }, [layout, offset, selected, size, themeRevision, zoom]);
 
   const hitTest = (clientX: number, clientY: number) => {
@@ -563,6 +563,12 @@ function WeightMap({
         onPointerLeave={() => {
           if (!dragRef.current) setHover(undefined);
         }}
+      />
+      <AddressRulerOverlay
+        layout={layout}
+        zoom={zoom}
+        offset={offset}
+        viewport={size}
       />
       <div className="wv-zoom">
         <button
@@ -767,60 +773,82 @@ function drawAddressMap(
   }
 }
 
-function drawAddressRuler(
+function AddressRulerOverlay({
+  layout,
+  zoom,
+  offset,
+  viewport
+}: {
+  layout: AddressMapLayout;
+  zoom: number;
+  offset: { x: number; y: number };
+  viewport: { width: number; height: number };
+}) {
+  return (
+    <div className="wv-address-overlay" aria-hidden="true">
+      {layout.files.map((fileLayout) => {
+        const headerY = offset.y + (fileLayout.gridY - 15) * zoom;
+        return (
+          <div key={fileLayout.file.id}>
+            {headerY > -20 && headerY < viewport.height + 20 && (
+              <>
+                <strong
+                  className="wv-address-file-name"
+                  style={{ top: headerY }}
+                >
+                  {fileLayout.file.name}
+                </strong>
+                <span
+                  className="wv-address-scale"
+                  style={{
+                    left: Math.max(112, viewport.width - 300),
+                    top: headerY
+                  }}
+                >
+                  {formatBytes(fileLayout.bytesPerCell)} / cell ·{" "}
+                  {formatBytes(fileLayout.bytesPerRow)} / row
+                  {formattedAlignment(fileLayout.file)
+                    ? ` · ${formattedAlignment(fileLayout.file)} alignment`
+                    : ""}
+                </span>
+              </>
+            )}
+            {Array.from({ length: fileLayout.rowCount }, (_, row) => {
+              const y =
+                offset.y +
+                (fileLayout.gridY + row * fileLayout.rowHeight) * zoom +
+                (fileLayout.rowHeight * zoom) / 2;
+              return y < -10 || y > viewport.height + 10 ? null : (
+                <code
+                  className="wv-address-row"
+                  key={row}
+                  style={{ top: y }}
+                >
+                  {formatAddress(BigInt(row) * fileLayout.bytesPerRow)}
+                </code>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function drawAddressRulerBackground(
   context: CanvasRenderingContext2D,
-  layout: AddressMapLayout,
-  zoom: number,
-  offset: { x: number; y: number },
   viewport: { width: number; height: number },
-  theme: CanvasTheme
+  theme: CanvasTheme,
+  pixelRatio: number
 ) {
-  context.save();
   context.fillStyle = theme.surface;
   context.fillRect(0, 0, 104, viewport.height);
   context.strokeStyle = theme.border;
   context.beginPath();
-  context.moveTo(103.5, 0);
-  context.lineTo(103.5, viewport.height);
+  const borderX = snapStrokeCoordinate(104, 1, 0, pixelRatio);
+  context.moveTo(borderX, 0);
+  context.lineTo(borderX, viewport.height);
   context.stroke();
-  context.textBaseline = "middle";
-
-  for (const fileLayout of layout.files) {
-    const headerY = offset.y + (fileLayout.gridY - 15) * zoom;
-    if (headerY > -20 && headerY < viewport.height + 20) {
-      context.fillStyle = theme.text;
-      context.font = "600 12px ui-monospace, monospace";
-      context.fillText(fileLayout.file.name, 8, headerY, viewport.width - 16);
-      context.fillStyle = theme.muted;
-      context.font = "10px ui-monospace, monospace";
-      context.fillText(
-        `${formatBytes(fileLayout.bytesPerCell)} / cell · ${formatBytes(fileLayout.bytesPerRow)} / row${
-          formattedAlignment(fileLayout.file)
-            ? ` · ${formattedAlignment(fileLayout.file)} alignment`
-            : ""
-        }`,
-        Math.max(112, viewport.width - 300),
-        headerY
-      );
-    }
-
-    context.fillStyle = theme.muted;
-    context.font = "10px ui-monospace, monospace";
-    for (let row = 0; row < fileLayout.rowCount; row++) {
-      const y =
-        offset.y +
-        (fileLayout.gridY + row * fileLayout.rowHeight) * zoom +
-        (fileLayout.rowHeight * zoom) / 2;
-      if (y < -10 || y > viewport.height + 10) continue;
-      context.fillText(
-        formatAddress(BigInt(row) * fileLayout.bytesPerRow),
-        8,
-        y,
-        90
-      );
-    }
-  }
-  context.restore();
 }
 
 function drawTensorLabel(
@@ -848,7 +876,7 @@ function drawTensorLabel(
   context.rect(rect.x, rect.y, rect.width, rect.height);
   context.clip();
   context.fillStyle = theme.labelText;
-  context.font = `600 ${fontSize}px ui-monospace, monospace`;
+  context.font = `600 ${fontSize}px "SF Mono", Menlo, Monaco, Consolas, monospace`;
   context.textBaseline = "middle";
   context.fillText(
     fitCanvasText(context, tensor.name, availableWidth),
@@ -856,7 +884,7 @@ function drawTensorLabel(
     rect.y + Math.min(pixelHeight / 2, 7) / zoom
   );
   if (pixelHeight >= 27 && pixelWidth >= 64) {
-    context.font = `${10 / zoom}px ui-monospace, monospace`;
+    context.font = `${10 / zoom}px "SF Mono", Menlo, Monaco, Consolas, monospace`;
     context.textBaseline = "top";
     context.fillText(
       fitCanvasText(
