@@ -156,8 +156,8 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-canvas-wrap.dragging canvas { cursor: grabbing; }
 .wv-address-overlay { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; font-family: "SF Mono", Menlo, Monaco, Consolas, monospace; }
 .wv-address-file-name, .wv-address-scale, .wv-address-row { position: absolute; transform: translateY(-50%); white-space: nowrap; }
-.wv-address-file-name { left: 8px; max-width: calc(100% - 16px); overflow: hidden; color: var(--wv-text); font-size: 12px; line-height: 1; text-overflow: ellipsis; }
-.wv-address-scale { color: var(--wv-muted); font-size: 10px; line-height: 1; }
+.wv-address-file-name { left: 8px; max-width: calc(100% - 250px); overflow: hidden; padding: 5px 52px 5px 4px; margin-left: -4px; color: var(--wv-text); background: linear-gradient(90deg, color-mix(in srgb, var(--wv-surface) 98%, white) 0 68%, transparent 100%); font-size: 12px; line-height: 1; text-overflow: ellipsis; }
+.wv-address-scale { right: 18px; left: auto; width: min(300px, calc(100% - 112px)); overflow: hidden; padding: 5px 4px 5px 48px; color: var(--wv-muted); background: linear-gradient(270deg, color-mix(in srgb, var(--wv-surface) 98%, white) 0 68%, transparent 100%); font-size: 10px; line-height: 1; text-align: right; text-overflow: ellipsis; }
 .wv-address-row { left: 8px; width: 90px; overflow: hidden; color: var(--wv-muted); font-size: 10px; line-height: 1; }
 .wv-tooltip { position: absolute; width: 268px; pointer-events: none; padding: 10px 12px; color: var(--wv-text); background: color-mix(in srgb, var(--wv-surface) 96%, transparent); border: 1px solid var(--wv-border-strong); box-shadow: 0 12px 35px rgba(0,0,0,.25); z-index: 3; font-size: 11px; }
 .wv-tooltip b, .wv-tooltip span, .wv-tooltip code { display: block; margin: 2px 0; overflow: hidden; text-overflow: ellipsis; }

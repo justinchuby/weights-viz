@@ -1627,10 +1627,7 @@ function AddressRulerOverlay({
                 </strong>
                 <span
                   className="wv-address-scale"
-                  style={{
-                    left: Math.max(112, viewport.width - 300),
-                    top: headerY
-                  }}
+                  style={{ top: headerY }}
                 >
                   {formatBytes(fileLayout.bytesPerCell)} / cell ·{" "}
                   {formatBytes(fileLayout.bytesPerRow)} / row
