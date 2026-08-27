@@ -5,6 +5,7 @@ const SHELL_URLS = [
   "./manifest.webmanifest",
   "./icon-192.png",
   "./icon-512.png",
+  "./icon-maskable-192.png",
   "./icon-maskable-512.png",
   "__VITE_ASSETS__"
 ];
