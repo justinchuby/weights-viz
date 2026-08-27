@@ -2,8 +2,12 @@ import type { ParsedFile, ParsedModel, TensorRecord } from "@weights-viz/core";
 import { describe, expect, it } from "vitest";
 import {
   ADDRESS_GRID_MIN_CELL_SIZE,
+  ADDRESS_MAP_MAX_ZOOM,
+  ADDRESS_MAP_MIN_ZOOM,
   addressMapMaxScrollY,
+  addressRowLabelStep,
   chooseBytesPerCell,
+  clampAddressMapZoom,
   createAddressMapLayout,
   hitTestAddressMap,
   isClickGesture
@@ -70,6 +74,19 @@ describe("address map", () => {
     expect(file.rowHeight).toBe(ADDRESS_GRID_MIN_CELL_SIZE);
     expect(file.gridWidth / file.columns).toBe(ADDRESS_GRID_MIN_CELL_SIZE);
     expect(layout.width).toBeGreaterThan(320);
+  });
+
+  it("allows overview zoom levels below 100%", () => {
+    expect(clampAddressMapZoom(0)).toBe(ADDRESS_MAP_MIN_ZOOM);
+    expect(clampAddressMapZoom(0.5)).toBe(0.5);
+    expect(clampAddressMapZoom(1)).toBe(1);
+    expect(clampAddressMapZoom(256)).toBe(ADDRESS_MAP_MAX_ZOOM);
+  });
+
+  it("keeps address labels legible while zoomed out", () => {
+    expect(addressRowLabelStep(14, 1)).toBe(1);
+    expect(addressRowLabelStep(14, 0.5)).toBe(2);
+    expect(addressRowLabelStep(14, 0.25)).toBe(4);
   });
 
   it("maps external ONNX tensors in their resolved data-file address space", () => {

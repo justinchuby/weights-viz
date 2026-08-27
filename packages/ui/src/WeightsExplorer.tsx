@@ -31,7 +31,11 @@ import {
   tensorComparisonKey
 } from "@weights-viz/core";
 import {
+  ADDRESS_MAP_MAX_ZOOM,
+  ADDRESS_MAP_MIN_ZOOM,
   addressMapMaxScrollY,
+  addressRowLabelStep,
+  clampAddressMapZoom,
   createAddressMapLayout,
   hitTestAddressMap,
   isClickGesture,
@@ -1190,7 +1194,7 @@ function WeightMap({
   };
 
   const setZoomAt = (nextZoom: number, px: number, py: number) => {
-    const next = Math.min(128, Math.max(1, nextZoom));
+    const next = clampAddressMapZoom(nextZoom);
     const nextOffset = {
       x: px - ((px - offset.x) * next) / zoom,
       y: py - ((py - offset.y) * next) / zoom
@@ -1341,6 +1345,7 @@ function WeightMap({
         <div className="wv-zoom">
           <button
             aria-label="Zoom out"
+            disabled={zoom <= ADDRESS_MAP_MIN_ZOOM}
             onClick={() => setZoomAt(zoom / 1.4, size.width / 2, size.height / 2)}
           >
             <Minus className="wv-icon" aria-hidden="true" />
@@ -1348,6 +1353,7 @@ function WeightMap({
           <span>{Math.round(zoom * 100)}%</span>
           <button
             aria-label="Zoom in"
+            disabled={zoom >= ADDRESS_MAP_MAX_ZOOM}
             onClick={() => setZoomAt(zoom * 1.4, size.width / 2, size.height / 2)}
           >
             <Plus className="wv-icon" aria-hidden="true" />
@@ -1718,6 +1724,7 @@ function AddressRulerOverlay({
     <div className="wv-address-overlay" aria-hidden="true">
       {layout.files.map((fileLayout) => {
         const headerY = offset.y + (fileLayout.gridY - 15) * zoom;
+        const rowLabelStep = addressRowLabelStep(fileLayout.rowHeight, zoom);
         return (
           <div key={fileLayout.file.id}>
             {headerY > -20 && headerY < viewport.height + 20 && (
@@ -1741,11 +1748,15 @@ function AddressRulerOverlay({
               </>
             )}
             {Array.from({ length: fileLayout.rowCount }, (_, row) => {
+              if (row % rowLabelStep !== 0) return null;
               const y =
                 offset.y +
                 (fileLayout.gridY + row * fileLayout.rowHeight) * zoom +
                 (fileLayout.rowHeight * zoom) / 2;
-              return y < -10 || y > viewport.height + 10 ? null : (
+              if (y - headerY < 14 || y < -10 || y > viewport.height + 10) {
+                return null;
+              }
+              return (
                 <code
                   className="wv-address-row"
                   key={row}

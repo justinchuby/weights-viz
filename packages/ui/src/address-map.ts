@@ -4,6 +4,8 @@ export const ADDRESS_GRID_COLUMNS = 64;
 export const NARROW_ADDRESS_GRID_COLUMNS = 32;
 export const ADDRESS_GRID_TARGET_ROWS = 128;
 export const ADDRESS_GRID_MIN_CELL_SIZE = 14;
+export const ADDRESS_MAP_MIN_ZOOM = 0.25;
+export const ADDRESS_MAP_MAX_ZOOM = 128;
 export const DRAG_THRESHOLD_PX = 4;
 
 const GUTTER_WIDTH = 104;
@@ -141,6 +143,18 @@ export function addressMapMaxScrollY(
       Math.max(0, lastFile.rowCount - 1) * lastFile.rowHeight) *
     zoom
   );
+}
+
+export function clampAddressMapZoom(zoom: number): number {
+  return Math.min(ADDRESS_MAP_MAX_ZOOM, Math.max(ADDRESS_MAP_MIN_ZOOM, zoom));
+}
+
+export function addressRowLabelStep(
+  rowHeight: number,
+  zoom: number,
+  minimumSpacing = 12
+): number {
+  return Math.max(1, Math.ceil(minimumSpacing / (rowHeight * zoom)));
 }
 
 function scaleBytesPerCell(bytesPerCell: bigint, step: number): bigint {
