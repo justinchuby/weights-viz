@@ -348,16 +348,13 @@ export function WeightsExplorer({
               <div>
                 <span>BYTE MAP</span>
                 {models.length > 1 ? (
-                  <select
+                  <ModelSelectControl
                     className="wv-model-select"
                     aria-label="Active model"
                     value={activeModel.id}
-                    onChange={(event) => setActiveModelId(event.target.value)}
-                  >
-                    {models.map((model) => (
-                      <option key={model.id} value={model.id}>{model.name}</option>
-                    ))}
-                  </select>
+                    models={models}
+                    onChange={setActiveModelId}
+                  />
                 ) : (
                   <h2>{activeModel.name}</h2>
                 )}
@@ -677,20 +674,14 @@ function ComparisonWorkspace({
         </button>
         <label>
           <span>Left</span>
-          <span className="wv-select-control wv-toolbar-control">
-            <select
-              value={left.id}
-              onChange={(event) => {
-                if (event.target.value === right.id) onRightChange(left.id);
-                onLeftChange(event.target.value);
-              }}
-            >
-              {models.map((model) => (
-                <option key={model.id} value={model.id}>{model.name}</option>
-              ))}
-            </select>
-            <ChevronDown className="wv-icon" aria-hidden="true" />
-          </span>
+          <ModelSelectControl
+            value={left.id}
+            models={models}
+            onChange={(value) => {
+              if (value === right.id) onRightChange(left.id);
+              onLeftChange(value);
+            }}
+          />
         </label>
         <button
           className="wv-swap wv-toolbar-control"
@@ -706,20 +697,14 @@ function ComparisonWorkspace({
         </button>
         <label>
           <span>Right</span>
-          <span className="wv-select-control wv-toolbar-control">
-            <select
-              value={right.id}
-              onChange={(event) => {
-                if (event.target.value === left.id) onLeftChange(right.id);
-                onRightChange(event.target.value);
-              }}
-            >
-              {models.map((model) => (
-                <option key={model.id} value={model.id}>{model.name}</option>
-              ))}
-            </select>
-            <ChevronDown className="wv-icon" aria-hidden="true" />
-          </span>
+          <ModelSelectControl
+            value={right.id}
+            models={models}
+            onChange={(value) => {
+              if (value === left.id) onLeftChange(right.id);
+              onRightChange(value);
+            }}
+          />
         </label>
         <div className="wv-tensor-search">
           <input
@@ -891,6 +876,35 @@ function largestFileSize(models: ParsedModel[]): bigint {
         largest
       ),
     0n
+  );
+}
+
+function ModelSelectControl({
+  value,
+  models,
+  onChange,
+  className,
+  "aria-label": ariaLabel
+}: {
+  value: string;
+  models: ParsedModel[];
+  onChange: (value: string) => void;
+  className?: string;
+  "aria-label"?: string;
+}) {
+  return (
+    <span className={`wv-select-control wv-toolbar-control${className ? ` ${className}` : ""}`}>
+      <select
+        {...(ariaLabel ? { "aria-label": ariaLabel } : {})}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {models.map((model) => (
+          <option key={model.id} value={model.id}>{model.name}</option>
+        ))}
+      </select>
+      <ChevronDown className="wv-icon" aria-hidden="true" />
+    </span>
   );
 }
 
