@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeftRight,
   ChevronDown,
   ChevronUp,
   CircleSlash2,
+  Columns2,
+  Download,
+  FileUp,
+  Github,
+  Info,
+  Link2,
   Minus,
   MousePointerClick,
   Plus,
@@ -105,6 +111,7 @@ export function WeightsExplorer({
   const [sample, setSample] = useState<TensorSample>();
   const [sampleError, setSampleError] = useState<string>();
   const [url, setUrl] = useState(defaultUrl);
+  const [urlOpen, setUrlOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [inspectorMode, setInspectorMode] = useState<"metadata" | "tensor">("metadata");
   const [metadataFileId, setMetadataFileId] = useState<string>();
@@ -200,49 +207,81 @@ export function WeightsExplorer({
     <main className={`wv-shell${compact ? " compact" : ""}`}>
       {!compact && <header className="wv-header">
         <div className="wv-brand">
-          <div className="wv-kicker">LOCAL-FIRST MODEL INSPECTOR</div>
           <h1>Weights <span>Viz</span></h1>
+          <span className="wv-brand-tag">local-first model inspector</span>
+        </div>
+        <div className="wv-actions">
           <a
-            className="wv-repo-link"
+            className="wv-icon-button"
             href="https://github.com/justinchuby/weights-viz"
             target="_blank"
             rel="noreferrer"
+            title="View source on GitHub"
+            aria-label="View source on GitHub"
           >
-            Open source by justinchuby · GitHub ↗
+            <Github className="wv-icon" aria-hidden="true" />
           </a>
-        </div>
-        <div className="wv-actions">
           {onFilesSelected ? (
-            <FilePicker onFilesSelected={onFilesSelected} onPickerResult={setPickerBlocked}>
-              Open files
+            <FilePicker
+              label="Open files"
+              onFilesSelected={onFilesSelected}
+              onPickerResult={setPickerBlocked}
+            >
+              <FileUp className="wv-icon" aria-hidden="true" />
+              <span>Open</span>
             </FilePicker>
           ) : onChooseFiles ? (
-            <button className="wv-button primary" onClick={onChooseFiles}>
-              Open files
+            <button className="wv-button primary wv-icon-label" onClick={onChooseFiles}>
+              <FileUp className="wv-icon" aria-hidden="true" />
+              <span>Open</span>
             </button>
           ) : null}
           {onOpenUrl && (
+            <button
+              className={`wv-icon-button${urlOpen ? " active" : ""}`}
+              type="button"
+              title="Load model URLs"
+              aria-label="Load model URLs"
+              aria-expanded={urlOpen}
+              onClick={() => setUrlOpen((open) => !open)}
+            >
+              <Link2 className="wv-icon" aria-hidden="true" />
+            </button>
+          )}
+          {installAvailable && onInstall && (
+            <button
+              className="wv-icon-button"
+              type="button"
+              title="Install app"
+              aria-label="Install app"
+              onClick={onInstall}
+            >
+              <Download className="wv-icon" aria-hidden="true" />
+            </button>
+          )}
+          {onOpenUrl && urlOpen && (
             <form
-              className="wv-url"
+              className="wv-url-popover"
               onSubmit={(event) => {
                 event.preventDefault();
-                if (url.trim()) onOpenUrl(url.trim());
+                if (!url.trim()) return;
+                onOpenUrl(url.trim());
+                setUrlOpen(false);
               }}
             >
+              <label htmlFor="wv-model-urls">Model URLs</label>
               <textarea
-                aria-label="Model URLs"
-                rows={1}
-                placeholder="One or more model URLs"
+                id="wv-model-urls"
+                rows={3}
+                placeholder="Paste one or more model URLs"
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
               />
-              <button className="wv-button" type="submit">Load URL</button>
+              <div>
+                <small>Separate multiple URLs with spaces or new lines.</small>
+                <button className="wv-button primary" type="submit">Load</button>
+              </div>
             </form>
-          )}
-          {installAvailable && onInstall && (
-            <button className="wv-button" type="button" onClick={onInstall}>
-              Install app
-            </button>
           )}
         </div>
       </header>}
@@ -624,8 +663,14 @@ function ComparisonWorkspace({
   return (
     <section className={`wv-comparison${compact ? " compact" : ""}`}>
       <div className="wv-comparison-toolbar">
-        <button className="wv-button" type="button" onClick={onExit}>
-          Single
+        <button
+          className="wv-button wv-icon-label"
+          type="button"
+          title="Return to single-model view"
+          onClick={onExit}
+        >
+          <Columns2 className="wv-icon" aria-hidden="true" />
+          <span>Single</span>
         </button>
         <label>
           <span>Left</span>
@@ -702,39 +747,43 @@ function ComparisonWorkspace({
             <ChevronDown className="wv-icon" aria-hidden="true" />
           </button>
         </div>
-      </div>
-      <div className="wv-diff-summary" aria-label="Tensor comparison summary">
-        <DiffSummaryButton
-          active={filter === "all"}
-          label="All"
-          value={comparison.tensors.length}
-          onClick={() => setFilter("all")}
-        />
-        <DiffSummaryButton
-          active={filter === "changed"}
-          label="Changed"
-          value={comparison.summary.changed + comparison.summary.ambiguous}
-          onClick={() => setFilter("changed")}
-        />
-        <DiffSummaryButton
-          active={filter === "left-only"}
-          label="Removed"
-          value={comparison.summary["left-only"]}
-          onClick={() => setFilter("left-only")}
-        />
-        <DiffSummaryButton
-          active={filter === "right-only"}
-          label="Added"
-          value={comparison.summary["right-only"]}
-          onClick={() => setFilter("right-only")}
-        />
-        <span className="wv-unchanged-count">
-          {comparison.summary.unchanged.toLocaleString()} unchanged
-        </span>
-      </div>
-      <div className="wv-comparison-disclaimer" role="note">
-        Structure diff only — tensor metadata and encoded layout are compared.
-        Weight values and raw file bytes are not compared.
+        <div className="wv-diff-summary" aria-label="Tensor comparison summary">
+          <DiffSummaryButton
+            active={filter === "all"}
+            label="All"
+            value={comparison.tensors.length}
+            onClick={() => setFilter("all")}
+          />
+          <DiffSummaryButton
+            active={filter === "changed"}
+            label="Changed"
+            value={comparison.summary.changed + comparison.summary.ambiguous}
+            onClick={() => setFilter("changed")}
+          />
+          <DiffSummaryButton
+            active={filter === "left-only"}
+            label="Removed"
+            value={comparison.summary["left-only"]}
+            onClick={() => setFilter("left-only")}
+          />
+          <DiffSummaryButton
+            active={filter === "right-only"}
+            label="Added"
+            value={comparison.summary["right-only"]}
+            onClick={() => setFilter("right-only")}
+          />
+          <span className="wv-unchanged-count">
+            {comparison.summary.unchanged.toLocaleString()} unchanged
+          </span>
+          <span
+            className="wv-structure-note"
+            role="note"
+            title="Tensor metadata and encoded layout are compared. Weight values and raw file bytes are not compared."
+          >
+            <Info className="wv-icon" aria-hidden="true" />
+            <span>Metadata only</span>
+          </span>
+        </div>
       </div>
       <div className="wv-comparison-grid">
         <ComparisonPaneHeader side="LEFT" model={left} />
@@ -1888,11 +1937,13 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 
 function FilePicker({
   children,
+  label,
   large = false,
   onFilesSelected,
   onPickerResult
 }: {
-  children: string;
+  children: ReactNode;
+  label?: string;
   large?: boolean;
   onFilesSelected: (files: File[]) => void;
   onPickerResult?: (blocked: boolean) => void;
@@ -1939,12 +1990,12 @@ function FilePicker({
 
   return (
     <span className={`wv-file-picker wv-button primary${large ? " large" : ""}`}>
-      <span aria-hidden="true">{children}</span>
+      <span className="wv-icon-label" aria-hidden="true">{children}</span>
       <input
         ref={inputRef}
         type="file"
         multiple
-        aria-label={children}
+        aria-label={label ?? (typeof children === "string" ? children : "Open files")}
         accept=".gguf,.safetensors,.onnx,.json,application/octet-stream"
         onClick={watchChooser}
         onChange={(event) => {
