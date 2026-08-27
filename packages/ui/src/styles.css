@@ -82,6 +82,7 @@ html, body, #root { margin: 0; width: 100%; min-height: 100%; color: var(--wv-te
 button, input, textarea { font: inherit; }
 button, input, textarea, select { color: inherit; }
 input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; }
+.wv-icon { width: 14px; height: 14px; display: block; stroke-width: 2; }
 
 .wv-shell { min-height: 100vh; color: var(--wv-text); background: var(--wv-bg); }
 .wv-shell.compact { height: 100vh; min-height: 0; overflow: hidden; }
@@ -110,7 +111,7 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-alert.error { color: var(--wv-danger-text); background: var(--wv-danger-bg); border-color: var(--wv-danger-border); margin: 10px 28px; }
 .wv-alert.warning { color: var(--wv-warning-text); background: var(--wv-warning-bg); border-color: var(--wv-warning-border); margin: 10px 28px; display: flex; gap: 12px; align-items: flex-start; line-height: 1.55; }
 .wv-alert.warning b { color: var(--wv-warning-text); }
-.wv-alert-dismiss { margin-left: auto; background: transparent; border: 0; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; color: inherit; }
+.wv-alert-dismiss { margin-left: auto; background: transparent; border: 0; cursor: pointer; line-height: 1; padding: 0 2px; color: inherit; }
 
 .wv-empty { min-height: calc(100vh - 94px); position: relative; display: grid; place-items: center; overflow: hidden; }
 .wv-empty-grid { position: absolute; inset: 0; opacity: .13; background-image: linear-gradient(var(--wv-accent) 1px, transparent 1px), linear-gradient(90deg, var(--wv-accent) 1px, transparent 1px); background-size: 42px 42px; mask-image: radial-gradient(circle, black, transparent 68%); }
@@ -197,7 +198,7 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-comparison-pane-head > small { grid-column: 2; color: var(--wv-muted); font: 9px ui-monospace, monospace; }
 .wv-comparison-grid > .wv-canvas-wrap { min-height: 0; background: var(--wv-map-bg); }
 .wv-map-empty-counterpart { position: absolute; z-index: 6; inset: 0; display: grid; place-content: center; gap: 8px; color: var(--wv-muted); background: color-mix(in srgb, var(--wv-map-bg) 94%, transparent); text-align: center; font: 11px ui-monospace, monospace; pointer-events: none; }
-.wv-map-empty-counterpart span { color: var(--wv-faint); font-size: 28px; }
+.wv-map-empty-counterpart svg { width: 28px; height: 28px; margin: auto; color: var(--wv-faint); }
 .wv-comparison-detail { min-height: 88px; padding: 9px 12px; display: grid; align-content: center; gap: 4px; overflow: hidden; background: var(--wv-surface); border-top: 2px solid transparent; }
 .wv-comparison-detail.changed, .wv-comparison-detail.ambiguous { border-top-color: var(--wv-diff-changed); }
 .wv-comparison-detail.left-only { border-top-color: var(--wv-diff-removed); }
@@ -224,7 +225,7 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-inspector dd { color: var(--wv-text); margin: 0; font-size: 12px; font-weight: 500; word-break: break-word; }
 .wv-inspector dd.mono { color: var(--wv-accent); font-family: ui-monospace, monospace; }
 .wv-inspector-empty { color: var(--wv-muted); line-height: 1.6; margin-top: 40%; text-align: center; font-size: 13px; }
-.wv-inspector-empty span { display: block; color: var(--wv-accent); font-size: 30px; margin-bottom: 10px; }
+.wv-inspector-empty svg { display: block; width: 30px; height: 30px; color: var(--wv-accent); margin: 0 auto 10px; }
 .wv-stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 8px; }
 .wv-stat-grid b { background: var(--wv-surface-alt); padding: 8px; font: 11px ui-monospace, monospace; overflow: hidden; }
 .wv-stat-grid small { color: var(--wv-muted); display: block; font-size: 8px; margin-top: 5px; }

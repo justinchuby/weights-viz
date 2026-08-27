@@ -1,4 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeftRight,
+  ChevronDown,
+  ChevronUp,
+  CircleSlash2,
+  Minus,
+  MousePointerClick,
+  Plus,
+  RotateCcw,
+  X
+} from "lucide-react";
 import type {
   ModelComparison,
   ParsedFile,
@@ -251,7 +262,7 @@ export function WeightsExplorer({
             aria-label="Dismiss"
             onClick={() => setPickerBlocked(false)}
           >
-            ×
+            <X className="wv-icon" aria-hidden="true" />
           </button>
         </div>
       )}
@@ -355,7 +366,7 @@ export function WeightsExplorer({
                   disabled={matchingTensors.length === 0}
                   onClick={() => navigateTensorMatches(-1)}
                 >
-                  ↑
+                  <ChevronUp className="wv-icon" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -364,7 +375,7 @@ export function WeightsExplorer({
                   disabled={matchingTensors.length === 0}
                   onClick={() => navigateTensorMatches(1)}
                 >
-                  ↓
+                  <ChevronDown className="wv-icon" aria-hidden="true" />
                 </button>
               </div>
               <div className="wv-legend" aria-label="Data type legend">
@@ -512,7 +523,7 @@ export function WeightsExplorer({
               </>
             ) : (
               <div className="wv-inspector-empty">
-                <span>↖</span>
+                <MousePointerClick aria-hidden="true" />
                 Select a tensor to see its exact range, shape, storage, and values.
               </div>
             )}
@@ -634,7 +645,7 @@ function ComparisonWorkspace({
             onRightChange(left.id);
           }}
         >
-          ⇄
+          <ArrowLeftRight className="wv-icon" aria-hidden="true" />
         </button>
         <label>
           <span>Right</span>
@@ -674,7 +685,7 @@ function ComparisonWorkspace({
             disabled={!matchingPairs.length}
             onClick={() => navigateMatches(-1)}
           >
-            ↑
+            <ChevronUp className="wv-icon" aria-hidden="true" />
           </button>
           <button
             type="button"
@@ -682,7 +693,7 @@ function ComparisonWorkspace({
             disabled={!matchingPairs.length}
             onClick={() => navigateMatches(1)}
           >
-            ↓
+            <ChevronDown className="wv-icon" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -1183,7 +1194,7 @@ function WeightMap({
       />
       {emptyState && (
         <div className="wv-map-empty-counterpart" role="status">
-          <span>∅</span>
+          <CircleSlash2 aria-hidden="true" />
           {emptyState}
         </div>
       )}
@@ -1200,7 +1211,7 @@ function WeightMap({
             disabled={resolutionStep <= -2}
             onClick={() => setResolutionStep(Math.max(-2, resolutionStep - 1))}
           >
-            −
+            <Minus className="wv-icon" aria-hidden="true" />
           </button>
           <span title="Shared resolution for every file">
             {formatBytes(layout.bytesPerCell)} / cell
@@ -1210,7 +1221,7 @@ function WeightMap({
             disabled={resolutionStep >= 8}
             onClick={() => setResolutionStep(Math.min(8, resolutionStep + 1))}
           >
-            +
+            <Plus className="wv-icon" aria-hidden="true" />
           </button>
         </div>
         <div className="wv-zoom">
@@ -1218,14 +1229,14 @@ function WeightMap({
             aria-label="Zoom out"
             onClick={() => setZoomAt(zoom / 1.4, size.width / 2, size.height / 2)}
           >
-            −
+            <Minus className="wv-icon" aria-hidden="true" />
           </button>
           <span>{Math.round(zoom * 100)}%</span>
           <button
             aria-label="Zoom in"
             onClick={() => setZoomAt(zoom * 1.4, size.width / 2, size.height / 2)}
           >
-            +
+            <Plus className="wv-icon" aria-hidden="true" />
           </button>
           <button
             aria-label="Reset view"
@@ -1234,7 +1245,9 @@ function WeightMap({
               setResolutionStep(0);
               setOffset({ x: 0, y: 0 });
             }}
-          >↺</button>
+          >
+            <RotateCcw className="wv-icon" aria-hidden="true" />
+          </button>
         </div>
       </div>
       <VerticalMapScrollbar
