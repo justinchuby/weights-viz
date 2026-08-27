@@ -5,6 +5,7 @@ on:
     tags: ["v*"]
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
@@ -27,3 +28,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" apps/vscode/dist/*.vsix --generate-notes
+      - name: Dispatch Marketplace publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run marketplace.yml \
+            --ref "$GITHUB_REF_NAME" \
+            --field tag="$GITHUB_REF_NAME" \
+            --field prerelease=false

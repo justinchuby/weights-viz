@@ -1,0 +1,81 @@
+name: Publish VS Code Marketplace
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Git tag containing the extension version
+        required: true
+        type: string
+      prerelease:
+        description: Publish as a VS Code pre-release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vscode-marketplace-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      PRERELEASE: ${{ github.event_name == 'release' && github.event.release.prerelease || inputs.prerelease }}
+    steps:
+      - name: Require Marketplace token
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::error::Add a repository Actions secret named VSCE_PAT with Visual Studio Marketplace Manage scope."
+            exit 1
+          fi
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.15.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify release version
+        run: |
+          expected_tag="v$(node -p "require('./apps/vscode/package.json').version")"
+          if [ "$RELEASE_TAG" != "$expected_tag" ]; then
+            echo "::error::Release tag $RELEASE_TAG does not match extension version $expected_tag."
+            exit 1
+          fi
+      - name: Package extension
+        run: |
+          if [ "$PRERELEASE" = "true" ]; then
+            pnpm --filter weights-viz run build
+            pnpm --filter weights-viz exec vsce package \
+              --pre-release \
+              --no-dependencies \
+              --out dist/weights-viz.vsix
+          else
+            pnpm package:vscode
+          fi
+      - name: Publish extension
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          extra_args=()
+          if [ "$PRERELEASE" = "true" ]; then
+            extra_args+=(--pre-release)
+          fi
+          pnpm --filter weights-viz exec vsce publish \
+            --packagePath dist/weights-viz.vsix \
+            --pat "$VSCE_PAT" \
+            --skip-duplicate \
+            "${extra_args[@]}"

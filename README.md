@@ -144,7 +144,17 @@ pnpm package:vscode
 ```
 
 Pushes to `main` deploy the static app through GitHub Pages. Version tags such
-as `v0.1.0` create a GitHub release containing the VSIX.
+as `v0.2.0` create a GitHub release containing the VSIX, then dispatch the
+Marketplace publishing workflow. A GitHub release published manually triggers
+the same Marketplace workflow.
+
+Automated Marketplace publishing requires a repository Actions secret named
+`VSCE_PAT`. Create an Azure DevOps personal access token for **All accessible
+organizations** with **Marketplace → Manage** scope, then add it under
+**Settings → Secrets and variables → Actions**. Stable GitHub releases publish
+stable extensions; GitHub prereleases publish VS Code prereleases. The workflow
+refuses to publish if the release tag does not exactly match
+`v<apps/vscode/package.json version>`.
 
 ## Performance and safety
 
