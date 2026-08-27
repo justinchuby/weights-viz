@@ -1,6 +1,7 @@
 import type { ParsedFile, ParsedModel, TensorRecord } from "@weights-viz/core";
 import { describe, expect, it } from "vitest";
 import {
+  ADDRESS_GRID_MIN_CELL_SIZE,
   addressMapMaxScrollY,
   chooseBytesPerCell,
   createAddressMapLayout,
@@ -60,6 +61,15 @@ describe("address map", () => {
     expect(wrapped?.rects.length).toBeGreaterThan(1);
     expect(wrapped?.rects[0]?.x).toBeGreaterThan(layout.files[0]!.gridX);
     expect(wrapped?.rects.at(-1)?.width).toBeGreaterThan(0);
+  });
+
+  it("keeps cells readable when the viewport narrows", () => {
+    const layout = createAddressMapLayout(makeModel(8n * 1024n ** 2n, []), 320);
+    const file = layout.files[0]!;
+
+    expect(file.rowHeight).toBe(ADDRESS_GRID_MIN_CELL_SIZE);
+    expect(file.gridWidth / file.columns).toBe(ADDRESS_GRID_MIN_CELL_SIZE);
+    expect(layout.width).toBeGreaterThan(320);
   });
 
   it("maps external ONNX tensors in their resolved data-file address space", () => {

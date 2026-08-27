@@ -3,6 +3,7 @@ import type { ParsedFile, ParsedModel, TensorRecord } from "@weights-viz/core";
 export const ADDRESS_GRID_COLUMNS = 64;
 export const NARROW_ADDRESS_GRID_COLUMNS = 32;
 export const ADDRESS_GRID_TARGET_ROWS = 128;
+export const ADDRESS_GRID_MIN_CELL_SIZE = 14;
 export const DRAG_THRESHOLD_PX = 4;
 
 const GUTTER_WIDTH = 104;
@@ -69,7 +70,10 @@ export function createAddressMapLayout(
 ): AddressMapLayout {
   const columns =
     width < 700 ? NARROW_ADDRESS_GRID_COLUMNS : ADDRESS_GRID_COLUMNS;
-  const gridWidth = Math.max(columns, width - GUTTER_WIDTH - RIGHT_PADDING);
+  const gridWidth = Math.max(
+    columns * ADDRESS_GRID_MIN_CELL_SIZE,
+    width - GUTTER_WIDTH - RIGHT_PADDING
+  );
   const rowHeight = gridWidth / columns;
   const largestFileSize =
     referenceFileSize ??
@@ -109,7 +113,7 @@ export function createAddressMapLayout(
   return {
     files,
     bytesPerCell,
-    width,
+    width: Math.max(width, GUTTER_WIDTH + gridWidth + RIGHT_PADDING),
     contentHeight: Math.max(y - FILE_GAP + TOP_PADDING, 1)
   };
 }
