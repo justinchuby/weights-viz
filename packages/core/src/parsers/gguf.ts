@@ -542,7 +542,16 @@ export class GgufParser implements Parser {
         dataOffset: dataRegionStart + info.relativeOffset,
         encoding: {
           ggmlTypeId: info.typeId,
-          littleEndian
+          littleEndian,
+          ...(typeSpec?.scalarBytes
+            ? { scalarBytes: typeSpec.scalarBytes }
+            : {}),
+          ...(typeSpec?.blockBytes
+            ? { blockBytes: typeSpec.blockBytes }
+            : {}),
+          ...(typeSpec?.blockElements
+            ? { blockElements: typeSpec.blockElements }
+            : {})
         },
         sampleSupport: getSampleSupport(info.typeId)
       };

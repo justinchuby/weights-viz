@@ -28,6 +28,9 @@ Recognizing a dtype and calculating its encoded byte length are separate from
 numeric decoding. Known GGML quantization types remain accurately sized and
 named even when value sampling is unavailable. Future unknown type IDs remain
 visible using their declared file ranges and produce a diagnostic.
+Click any dtype label in the legend, tensor inspector, or comparison details to
+open a visual guide to its bit fields, byte packing, quantization blocks,
+scales, offsets, and effective bits per weight.
 
 ## Opening local files
 

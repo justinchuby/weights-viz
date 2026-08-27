@@ -315,10 +315,21 @@ describe("GgufParser", () => {
     expect(embeddings.byteOffset).toBe(BigInt(dataRegionStart + 64));
     expect(embeddings.dataOffset).toBe(BigInt(dataRegionStart + 64));
     expect(embeddings.byteLength).toBe(16n);
+    expect(embeddings.encoding).toMatchObject({
+      ggmlTypeId: 0,
+      littleEndian: true,
+      scalarBytes: 4
+    });
     expect(output.dtype).toBe("Q8_0");
     expect(output.byteOffset).toBe(BigInt(dataRegionStart + 128));
     expect(output.dataOffset).toBe(BigInt(dataRegionStart + 128));
     expect(output.byteLength).toBe(34n);
+    expect(output.encoding).toMatchObject({
+      ggmlTypeId: 8,
+      littleEndian: true,
+      blockBytes: 34,
+      blockElements: 32
+    });
     expect(unsupported.dtype).toBe("GGML_TYPE_99 (unsupported)");
     expect(unsupported.sampleSupport).toBe("unsupported");
     expect(unsupported.dataOffset).toBe(BigInt(dataRegionStart + 768));

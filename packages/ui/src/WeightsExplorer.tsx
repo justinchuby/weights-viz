@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from "react";
 import {
   ArrowLeftRight,
   ChevronDown,
@@ -24,7 +31,8 @@ import type {
   TensorComparison,
   TensorComparisonStatus,
   TensorRecord,
-  TensorSample
+  TensorSample,
+  WeightFormat
 } from "@weights-viz/core";
 import {
   compareModels,
@@ -50,6 +58,7 @@ import {
   formatShape
 } from "./format";
 import { colorForDtype } from "./dtype-color";
+import { DtypeExplorer } from "./DtypeExplorer";
 import {
   classifyTensorRole,
   colorForTensorRole,
@@ -126,6 +135,11 @@ export function WeightsExplorer({
     useState<TensorNavigationTarget>();
   const [comparisonMode, setComparisonMode] = useState(defaultCompare);
   const [rightModelId, setRightModelId] = useState<string>();
+  const [dtypeLesson, setDtypeLesson] = useState<{
+    format: WeightFormat;
+    tensor: TensorRecord;
+  }>();
+  const closeDtypeLesson = useCallback(() => setDtypeLesson(undefined), []);
   const tensorNavigationSequence = useRef(0);
   const activeModel =
     models.find((model) => model.id === activeModelId) ?? models[0];
@@ -135,6 +149,15 @@ export function WeightsExplorer({
   const comparisonRight =
     models.find((model) => model.id === rightModelId && model.id !== activeModel?.id) ??
     models.find((model) => model.id !== activeModel?.id);
+  const dtypeExamples = useMemo(() => {
+    const examples = new Map<string, TensorRecord>();
+    for (const file of activeModel?.files ?? []) {
+      for (const tensor of file.tensors) {
+        if (!examples.has(tensor.dtype)) examples.set(tensor.dtype, tensor);
+      }
+    }
+    return [...examples.entries()].slice(0, 8);
+  }, [activeModel]);
 
   useEffect(() => {
     if (activeModel && activeModel.id !== activeModelId) {
@@ -184,6 +207,13 @@ export function WeightsExplorer({
     setInspectorMode("tensor");
     setSample(undefined);
     setSampleError(undefined);
+  };
+
+  const explainDtype = (model: ParsedModel, tensor: TensorRecord) => {
+    const format =
+      model.files.find((file) => file.id === tensor.fileId)?.format ??
+      model.files[0]?.format;
+    if (format) setDtypeLesson({ format, tensor });
   };
 
   const navigateTensorMatches = (direction: 1 | -1) => {
@@ -351,6 +381,7 @@ export function WeightsExplorer({
           onLeftChange={setActiveModelId}
           onRightChange={setRightModelId}
           onExit={() => setComparisonMode(false)}
+          onExplainDtype={explainDtype}
         />
       ) : (
         <section key={activeModel.id} className="wv-workspace">
@@ -429,14 +460,18 @@ export function WeightsExplorer({
                 </button>
               </div>
               <div className="wv-legend" aria-label="Data type legend">
-                {[...new Set(activeModel.files.flatMap((file) => file.tensors.map((tensor) => tensor.dtype)))]
-                  .slice(0, 8)
-                  .map((dtype) => (
-                    <span key={dtype}>
-                      <i style={{ background: colorForDtype(dtype) }} />
-                      {dtype}
-                    </span>
-                  ))}
+                {dtypeExamples.map(([dtype, tensor]) => (
+                  <button
+                    className="wv-legend-dtype"
+                    key={dtype}
+                    type="button"
+                    title={`Learn how ${dtype} is encoded`}
+                    onClick={() => explainDtype(activeModel, tensor)}
+                  >
+                    <i style={{ background: colorForDtype(dtype) }} />
+                    {dtype}
+                  </button>
+                ))}
                 <small>shade = tensor role</small>
               </div>
             </div>
@@ -504,7 +539,15 @@ export function WeightsExplorer({
               />
             ) : selected ? (
               <>
-                <div className="wv-tensor-type">{selected.dtype}</div>
+                <button
+                  className="wv-tensor-type wv-dtype-trigger"
+                  type="button"
+                  title={`Learn how ${selected.dtype} is encoded`}
+                  onClick={() => explainDtype(activeModel, selected)}
+                >
+                  {selected.dtype}
+                  <Info aria-hidden="true" />
+                </button>
                 <h2>{selected.name}</h2>
                 <dl>
                   <Detail label="Shape" value={formatShape(selected.shape)} />
@@ -580,6 +623,13 @@ export function WeightsExplorer({
           </aside>
         </section>
       )}
+      {dtypeLesson && (
+        <DtypeExplorer
+          format={dtypeLesson.format}
+          tensor={dtypeLesson.tensor}
+          onClose={closeDtypeLesson}
+        />
+      )}
     </main>
   );
 }
@@ -593,7 +643,8 @@ function ComparisonWorkspace({
   compact,
   onLeftChange,
   onRightChange,
-  onExit
+  onExit,
+  onExplainDtype
 }: {
   models: ParsedModel[];
   left: ParsedModel;
@@ -602,6 +653,7 @@ function ComparisonWorkspace({
   onLeftChange: (id: string) => void;
   onRightChange: (id: string) => void;
   onExit: () => void;
+  onExplainDtype: (model: ParsedModel, tensor: TensorRecord) => void;
 }) {
   const comparison = useMemo(() => compareModels(left, right), [left, right]);
   const [query, setQuery] = useState("");
@@ -836,14 +888,18 @@ function ComparisonWorkspace({
           onClearSelection={clearSelection}
         />
         <ComparisonTensorDetail
+          model={left}
           {...(selectedPair?.left ? { tensor: selectedPair.left } : {})}
           {...(selectedPair ? { pair: selectedPair } : {})}
           missingLabel="Not present on the left"
+          onExplainDtype={onExplainDtype}
         />
         <ComparisonTensorDetail
+          model={right}
           {...(selectedPair?.right ? { tensor: selectedPair.right } : {})}
           {...(selectedPair ? { pair: selectedPair } : {})}
           missingLabel="Not present on the right"
+          onExplainDtype={onExplainDtype}
         />
       </div>
     </section>
@@ -972,13 +1028,17 @@ function ComparisonPaneHeader({
 }
 
 function ComparisonTensorDetail({
+  model,
   tensor,
   pair,
-  missingLabel
+  missingLabel,
+  onExplainDtype
 }: {
+  model: ParsedModel;
   tensor?: TensorRecord;
   pair?: TensorComparison;
   missingLabel: string;
+  onExplainDtype: (model: ParsedModel, tensor: TensorRecord) => void;
 }) {
   if (!pair) {
     return (
@@ -1000,7 +1060,14 @@ function ComparisonTensorDetail({
         <b>{tensor.name}</b>
       </div>
       <small>
-        {tensor.dtype} · {formatShape(tensor.shape)} ·{" "}
+        <button
+          className="wv-inline-dtype"
+          type="button"
+          onClick={() => onExplainDtype(model, tensor)}
+        >
+          {tensor.dtype}
+        </button>{" "}
+        · {formatShape(tensor.shape)} ·{" "}
         {formatParameterCount(tensor.shape)} params · {formatBytes(tensor.byteLength)}
       </small>
       <code>
