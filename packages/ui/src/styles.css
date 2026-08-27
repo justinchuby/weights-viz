@@ -150,7 +150,7 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-legend small { color: var(--wv-faint); font: 9px ui-monospace, monospace; white-space: nowrap; }
 
 .wv-map-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.wv-panel-title { min-height: 54px; padding: 10px 16px; border-bottom: 1px solid var(--wv-border); display: flex; align-items: center; justify-content: space-between; gap: 16px; background: var(--wv-surface); }
+.wv-panel-title { min-height: 54px; padding: 10px 16px; border-bottom: 1px solid var(--wv-border); display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; background: var(--wv-surface); }
 .wv-panel-title h2 { color: var(--wv-text); margin: 3px 0 0; font-size: 15px; }
 .wv-panel-title p { color: var(--wv-muted); font-size: 11px; }
 .wv-panel-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }

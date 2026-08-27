@@ -135,13 +135,19 @@ export function WeightsExplorer({
   useEffect(() => {
     if (activeModel && activeModel.id !== activeModelId) {
       setActiveModelId(activeModel.id);
-      setSelected(undefined);
-      setMetadataFileId(activeModel.files[0]?.id);
-      setInspectorMode("metadata");
-      setMetadataQuery("");
-      setTensorNavigation(undefined);
     }
   }, [activeModel, activeModelId]);
+
+  useEffect(() => {
+    if (!activeModel) return;
+    setSelected(undefined);
+    setSample(undefined);
+    setSampleError(undefined);
+    setMetadataFileId(activeModel.files[0]?.id);
+    setInspectorMode("metadata");
+    setMetadataQuery("");
+    setTensorNavigation(undefined);
+  }, [activeModel?.id]);
 
   useEffect(() => {
     if (defaultCompare) setComparisonMode(true);
@@ -333,6 +339,7 @@ export function WeightsExplorer({
         </section>
       ) : comparisonMode && comparisonRight ? (
         <ComparisonWorkspace
+          key={`${activeModel.id}:${comparisonRight.id}`}
           models={models}
           left={activeModel}
           right={comparisonRight}
@@ -342,7 +349,7 @@ export function WeightsExplorer({
           onExit={() => setComparisonMode(false)}
         />
       ) : (
-        <section className="wv-workspace">
+        <section key={activeModel.id} className="wv-workspace">
           <div className="wv-map-panel">
             <div className="wv-panel-title">
               <div>
