@@ -2,6 +2,7 @@ import { BinaryReader, bigintToSafeNumber, product, sampleStats } from "../binar
 import { ParseError } from "../errors";
 import {
   DEFAULT_MAX_METADATA_BYTES,
+  type DtypeCatalogEntry,
   type Diagnostic,
   type ParseOptions,
   type ParsedFile,
@@ -103,6 +104,20 @@ const GGML_TYPES = new Map<number, GgmlTypeSpec>([
   [41, { name: "Q1_0", sampleSupport: "unsupported", blockBytes: 18, blockElements: 128 }],
   [42, { name: "Q2_0", sampleSupport: "unsupported", blockBytes: 18, blockElements: 64 }]
 ]);
+
+export const GGUF_DTYPE_CATALOG: readonly DtypeCatalogEntry[] = Object.freeze(
+  [...GGML_TYPES.entries()].map(([typeId, spec]) => ({
+    format: "gguf" as const,
+    dtype: spec.name,
+    typeId,
+    sampleSupport: spec.sampleSupport,
+    ...(spec.scalarBytes !== undefined ? { scalarBytes: spec.scalarBytes } : {}),
+    ...(spec.blockBytes !== undefined ? { blockBytes: spec.blockBytes } : {}),
+    ...(spec.blockElements !== undefined
+      ? { blockElements: spec.blockElements }
+      : {})
+  }))
+);
 
 function needMore(length: number, offset: number, remaining: number): ParseError {
   return new ParseError(`Need ${length} bytes at buffer offset ${offset}, only ${remaining} remain`);

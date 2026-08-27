@@ -43,6 +43,49 @@ describe("dtype education", () => {
     expect(lesson.packing).toBeUndefined();
   });
 
+  it("distinguishes affine and symmetric K-quant decode formulas", () => {
+    const affine = createDtypeEducation(
+      "gguf",
+      makeTensor("Q4_K", 256n, 144n, {
+        blockBytes: 144,
+        blockElements: 256
+      })
+    );
+    const symmetric = createDtypeEducation(
+      "gguf",
+      makeTensor("Q3_K", 256n, 110n, {
+        blockBytes: 110,
+        blockElements: 256
+      })
+    );
+
+    expect(affine.formula?.expression).toContain("minimum");
+    expect(symmetric.formula?.expression).not.toContain("minimum");
+  });
+
+  it("describes Q8 companion metadata without treating sums as offsets", () => {
+    const q8_1 = createDtypeEducation(
+      "gguf",
+      makeTensor("Q8_1", 32n, 36n, {
+        blockBytes: 36,
+        blockElements: 32
+      })
+    );
+    const q8_k = createDtypeEducation(
+      "gguf",
+      makeTensor("Q8_K", 256n, 292n, {
+        blockBytes: 292,
+        blockElements: 256
+      })
+    );
+
+    expect(q8_1.family).toBe("Dot-product companion block");
+    expect(q8_1.block?.sections[0]?.label).toContain("scaled sum");
+    expect(q8_1.concepts.some(({ term }) => term === "Scaled sum")).toBe(true);
+    expect(q8_k.formula?.expression).toBe("weight ≈ scale × q");
+    expect(q8_k.block?.sections[0]?.label).toContain("group sums");
+  });
+
   it("shows how six-bit SafeTensors values cross byte boundaries", () => {
     const lesson = createDtypeEducation(
       "safetensors",

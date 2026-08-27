@@ -19,6 +19,7 @@ function App() {
   const [error, setError] = useState<string>();
   const [workerReady, setWorkerReady] = useState(false);
   const [sharedUrls] = useState(modelUrlsFromQuery);
+  const [dtypeAtlas, setDtypeAtlas] = useState(dtypeAtlasFromQuery);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent>();
   const workerRef = useRef<Worker | null>(null);
   const sharedUrlHandled = useRef(false);
@@ -44,6 +45,12 @@ function App() {
       worker.terminate();
       if (workerRef.current === worker) workerRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    const syncView = () => setDtypeAtlas(dtypeAtlasFromQuery());
+    window.addEventListener("popstate", syncView);
+    return () => window.removeEventListener("popstate", syncView);
   }, []);
 
   const request = <T,>(payload: WorkerRequest): Promise<T> =>
@@ -151,6 +158,7 @@ function App() {
         {...(error ? { error } : {})}
         {...(sharedUrls.length ? { defaultUrl: sharedUrls.join("\n") } : {})}
         defaultCompare={sharedUrls.length > 1}
+        defaultDtypeAtlas={dtypeAtlas}
         installAvailable={Boolean(installPrompt)}
         onInstall={() => {
           if (!installPrompt) return;
@@ -159,6 +167,13 @@ function App() {
           });
         }}
         onFilesSelected={(files) => void loadFiles(files)}
+        onDtypeAtlasChange={(open) => {
+          const pageUrl = new URL(window.location.href);
+          if (open) pageUrl.searchParams.set("view", "dtypes");
+          else pageUrl.searchParams.delete("view");
+          window.history.pushState(null, "", pageUrl);
+          setDtypeAtlas(open);
+        }}
         onOpenUrl={(input) =>
           void loadUrls(
             input
@@ -189,6 +204,10 @@ function modelUrlsFromQuery(): string[] {
         .map((value) => new URL(value, window.location.href).toString())
     )
   ];
+}
+
+function dtypeAtlasFromQuery(): boolean {
+  return new URLSearchParams(window.location.search).get("view") === "dtypes";
 }
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {

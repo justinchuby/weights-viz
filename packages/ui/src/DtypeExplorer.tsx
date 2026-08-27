@@ -1,6 +1,15 @@
 import { useEffect, useId, useMemo, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Binary, BookOpen, Boxes, Scale, X } from "lucide-react";
+import {
+  Binary,
+  BookOpen,
+  Boxes,
+  Cpu,
+  Gauge,
+  Scale,
+  Settings2,
+  X
+} from "lucide-react";
 import type { TensorRecord, WeightFormat } from "@weights-viz/core";
 import {
   createDtypeEducation,
@@ -15,12 +24,14 @@ interface DtypeExplorerProps {
   format: WeightFormat;
   tensor: TensorRecord;
   onClose: () => void;
+  showTensorMetrics?: boolean;
 }
 
 export function DtypeExplorer({
   format,
   tensor,
-  onClose
+  onClose,
+  showTensorMetrics = true
 }: DtypeExplorerProps) {
   const lesson = useMemo(
     () => createDtypeEducation(format, tensor),
@@ -111,25 +122,27 @@ export function DtypeExplorer({
         <div className="wv-dtype-body">
           <p className="wv-dtype-summary" id={summaryId}>{lesson.summary}</p>
 
-          <div className="wv-dtype-metrics">
-            <Metric
-              label="Tensor values"
-              value={formatParameterCount(tensor.shape)}
-            />
-            <Metric label="Encoded size" value={formatBytes(tensor.byteLength)} />
-            {lesson.tensorBitsPerValue !== undefined && (
+          {showTensorMetrics && (
+            <div className="wv-dtype-metrics">
               <Metric
-                label="Actual bits / value"
-                value={formatDecimal(lesson.tensorBitsPerValue)}
+                label="Tensor values"
+                value={formatParameterCount(tensor.shape)}
               />
-            )}
-            {lesson.f32CompressionRatio !== undefined && (
-              <Metric
-                label="F32 / stored size"
-                value={`${formatDecimal(lesson.f32CompressionRatio)}×`}
-              />
-            )}
-          </div>
+              <Metric label="Encoded size" value={formatBytes(tensor.byteLength)} />
+              {lesson.tensorBitsPerValue !== undefined && (
+                <Metric
+                  label="Actual bits / value"
+                  value={formatDecimal(lesson.tensorBitsPerValue)}
+                />
+              )}
+              {lesson.f32CompressionRatio !== undefined && (
+                <Metric
+                  label="F32 / stored size"
+                  value={`${formatDecimal(lesson.f32CompressionRatio)}×`}
+                />
+              )}
+            </div>
+          )}
 
           <div className="wv-dtype-grid">
             {lesson.segments.length > 0 && (
@@ -199,10 +212,72 @@ export function DtypeExplorer({
               </article>
             ))}
           </div>
+
+          {lesson.quantization && (
+            <section className="wv-quant-guide">
+              <header>
+                <span>GGUF QUANTIZATION IN PRACTICE</span>
+                <h3>From source weights to a fast dot product</h3>
+                <p>{lesson.quantization.purpose}</p>
+              </header>
+              <div className="wv-quant-columns">
+                <ProcessCard
+                  icon={<Cpu aria-hidden="true" />}
+                  title="During inference"
+                  steps={lesson.quantization.runtimeSteps}
+                />
+                <ProcessCard
+                  icon={<Gauge aria-hidden="true" />}
+                  title="Why kernels are fast"
+                  steps={lesson.quantization.optimizations}
+                />
+                <ProcessCard
+                  icon={<Settings2 aria-hidden="true" />}
+                  title="When the model is quantized"
+                  steps={lesson.quantization.creationSteps}
+                />
+              </div>
+              <div className="wv-quant-parameters">
+                <h4>How the parameters are chosen</h4>
+                {lesson.quantization.parameters.map((parameter) => (
+                  <div key={parameter.name}>
+                    <strong>{parameter.name}</strong>
+                    <p>{parameter.selection}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="wv-quant-tradeoff">
+                <Scale aria-hidden="true" />
+                <p>{lesson.quantization.tradeoff}</p>
+              </div>
+            </section>
+          )}
         </div>
       </section>
     </div>,
     document.body
+  );
+}
+
+function ProcessCard({
+  icon,
+  title,
+  steps
+}: {
+  icon: ReactNode;
+  title: string;
+  steps: string[];
+}) {
+  return (
+    <article>
+      <header>
+        {icon}
+        <strong>{title}</strong>
+      </header>
+      <ol>
+        {steps.map((step) => <li key={step}>{step}</li>)}
+      </ol>
+    </article>
   );
 }
 

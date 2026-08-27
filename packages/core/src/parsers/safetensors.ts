@@ -7,6 +7,7 @@ import {
 import { assertRange, ParseError } from "../errors";
 import {
   DEFAULT_MAX_METADATA_BYTES,
+  type DtypeCatalogEntry,
   type Diagnostic,
   type ParseOptions,
   type ParsedFile,
@@ -138,6 +139,16 @@ const DTYPE_INFO: Record<string, DTypeInfo> = {
     }
   }
 };
+
+export const SAFETENSORS_DTYPE_CATALOG: readonly DtypeCatalogEntry[] =
+  Object.freeze(
+    Object.entries(DTYPE_BITS).map(([dtype, bitsPerValue]) => ({
+      format: "safetensors" as const,
+      dtype,
+      bitsPerValue,
+      sampleSupport: DTYPE_INFO[dtype] ? "values" as const : "unsupported" as const
+    }))
+  );
 
 export class SafeTensorsParser implements Parser {
   readonly format = "safetensors" as const;

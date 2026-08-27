@@ -32,6 +32,12 @@ Click any dtype label in the legend, tensor inspector, or comparison details to
 open a visual guide to its bit fields, byte packing, quantization blocks,
 scales, offsets, and effective bits per weight.
 
+The standalone [Dtype Atlas](https://www.justinchuby.com/weights-viz/?view=dtypes)
+lists every supported SafeTensors, GGUF, and ONNX dtype without requiring a
+model file. GGUF quantization lessons also trace conversion parameter selection,
+fused dequantized matrix operations, and architecture-specific kernel
+optimizations.
+
 ## Opening local files
 
 The web app uses a real `<input type="file">`, drag and drop, and clipboard

@@ -2,6 +2,7 @@ import { bigintToSafeNumber } from "../binary";
 import { ParseError } from "../errors";
 import {
   DEFAULT_MAX_METADATA_BYTES,
+  type DtypeCatalogEntry,
   type ParseOptions,
   type ParsedFile,
   type Parser,
@@ -42,6 +43,15 @@ const ONNX_DATA_TYPE_NAMES: Record<number, string> = {
   25: "UINT2",
   26: "INT2"
 };
+
+export const ONNX_DTYPE_CATALOG: readonly DtypeCatalogEntry[] = Object.freeze(
+  Object.entries(ONNX_DATA_TYPE_NAMES).map(([typeId, dtype]) => ({
+    format: "onnx" as const,
+    dtype,
+    typeId: Number(typeId),
+    sampleSupport: "metadata-only" as const
+  }))
+);
 
 const ONNX_DATA_LOCATION_NAMES: Record<number, string> = {
   0: "DEFAULT",

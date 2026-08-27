@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   ArrowLeftRight,
+  BookOpen,
   ChevronDown,
   ChevronUp,
   CircleSlash2,
@@ -58,6 +59,7 @@ import {
   formatShape
 } from "./format";
 import { colorForDtype } from "./dtype-color";
+import { DtypeAtlas } from "./DtypeAtlas";
 import { DtypeExplorer } from "./DtypeExplorer";
 import {
   classifyTensorRole,
@@ -77,8 +79,10 @@ interface WeightsExplorerProps {
   intro?: string;
   compact?: boolean;
   defaultCompare?: boolean;
+  defaultDtypeAtlas?: boolean;
   installAvailable?: boolean;
   onInstall?: () => void;
+  onDtypeAtlasChange?: (open: boolean) => void;
 }
 
 interface HoverInfo {
@@ -117,8 +121,10 @@ export function WeightsExplorer({
   intro,
   compact = false,
   defaultCompare = false,
+  defaultDtypeAtlas = false,
   installAvailable = false,
-  onInstall
+  onInstall,
+  onDtypeAtlasChange
 }: WeightsExplorerProps) {
   const [activeModelId, setActiveModelId] = useState<string>();
   const [selected, setSelected] = useState<TensorRecord>();
@@ -138,7 +144,9 @@ export function WeightsExplorer({
   const [dtypeLesson, setDtypeLesson] = useState<{
     format: WeightFormat;
     tensor: TensorRecord;
+    catalogMode?: boolean;
   }>();
+  const [dtypeAtlasOpen, setDtypeAtlasOpen] = useState(defaultDtypeAtlas);
   const closeDtypeLesson = useCallback(() => setDtypeLesson(undefined), []);
   const tensorNavigationSequence = useRef(0);
   const activeModel =
@@ -181,6 +189,10 @@ export function WeightsExplorer({
   }, [defaultCompare]);
 
   useEffect(() => {
+    setDtypeAtlasOpen(defaultDtypeAtlas);
+  }, [defaultDtypeAtlas]);
+
+  useEffect(() => {
     if (comparisonRight && comparisonRight.id !== rightModelId) {
       setRightModelId(comparisonRight.id);
     }
@@ -214,6 +226,11 @@ export function WeightsExplorer({
       model.files.find((file) => file.id === tensor.fileId)?.format ??
       model.files[0]?.format;
     if (format) setDtypeLesson({ format, tensor });
+  };
+
+  const setDtypeAtlas = (open: boolean) => {
+    setDtypeAtlasOpen(open);
+    onDtypeAtlasChange?.(open);
   };
 
   const navigateTensorMatches = (direction: 1 | -1) => {
@@ -252,6 +269,15 @@ export function WeightsExplorer({
           <span className="wv-brand-tag">local-first model inspector</span>
         </div>
         <div className="wv-actions">
+          <button
+            className={`wv-button wv-icon-label${dtypeAtlasOpen ? " active" : ""}`}
+            type="button"
+            aria-pressed={dtypeAtlasOpen}
+            onClick={() => setDtypeAtlas(!dtypeAtlasOpen)}
+          >
+            <BookOpen className="wv-icon" aria-hidden="true" />
+            <span>Dtypes</span>
+          </button>
           <a
             className="wv-icon-button"
             href="https://github.com/justinchuby/weights-viz"
@@ -348,7 +374,14 @@ export function WeightsExplorer({
       )}
       {busy && <div className="wv-progress"><span /></div>}
 
-      {!activeModel ? (
+      {dtypeAtlasOpen ? (
+        <DtypeAtlas
+          onBack={() => setDtypeAtlas(false)}
+          onExplain={(format, tensor, catalogMode) =>
+            setDtypeLesson({ format, tensor, catalogMode })
+          }
+        />
+      ) : !activeModel ? (
         <section className="wv-empty">
           <div className="wv-empty-grid" />
           <div className="wv-empty-content">
@@ -369,6 +402,16 @@ export function WeightsExplorer({
                 Choose model files
               </button>
             ) : null}
+            {!busy && (
+              <button
+                className="wv-button wv-icon-label wv-empty-atlas"
+                type="button"
+                onClick={() => setDtypeAtlas(true)}
+              >
+                <BookOpen className="wv-icon" aria-hidden="true" />
+                Explore all dtypes
+              </button>
+            )}
           </div>
         </section>
       ) : comparisonMode && comparisonRight ? (
@@ -382,6 +425,7 @@ export function WeightsExplorer({
           onRightChange={setRightModelId}
           onExit={() => setComparisonMode(false)}
           onExplainDtype={explainDtype}
+          onOpenDtypeAtlas={() => setDtypeAtlas(true)}
         />
       ) : (
         <section key={activeModel.id} className="wv-workspace">
@@ -493,14 +537,26 @@ export function WeightsExplorer({
                 <label className="wv-label">Model</label>
                 <h1>{activeModel.name}</h1>
               </div>
-              {compact && (onChooseFiles || onFilesSelected) && (
-                onFilesSelected ? (
-                  <FilePicker onFilesSelected={onFilesSelected} onPickerResult={setPickerBlocked}>
-                    Open files
-                  </FilePicker>
-                ) : (
-                  <button className="wv-button" onClick={onChooseFiles}>Open files</button>
-                )
+              {compact && (
+                <div className="wv-inspector-head-actions">
+                  <button
+                    className="wv-button wv-icon-label"
+                    type="button"
+                    onClick={() => setDtypeAtlas(true)}
+                  >
+                    <BookOpen className="wv-icon" aria-hidden="true" />
+                    Dtypes
+                  </button>
+                  {(onChooseFiles || onFilesSelected) && (
+                    onFilesSelected ? (
+                      <FilePicker onFilesSelected={onFilesSelected} onPickerResult={setPickerBlocked}>
+                        Open files
+                      </FilePicker>
+                    ) : (
+                      <button className="wv-button" onClick={onChooseFiles}>Open files</button>
+                    )
+                  )}
+                </div>
               )}
             </div>
             <div className="wv-summary">
@@ -628,6 +684,7 @@ export function WeightsExplorer({
           format={dtypeLesson.format}
           tensor={dtypeLesson.tensor}
           onClose={closeDtypeLesson}
+          showTensorMetrics={!dtypeLesson.catalogMode}
         />
       )}
     </main>
@@ -644,7 +701,8 @@ function ComparisonWorkspace({
   onLeftChange,
   onRightChange,
   onExit,
-  onExplainDtype
+  onExplainDtype,
+  onOpenDtypeAtlas
 }: {
   models: ParsedModel[];
   left: ParsedModel;
@@ -654,6 +712,7 @@ function ComparisonWorkspace({
   onRightChange: (id: string) => void;
   onExit: () => void;
   onExplainDtype: (model: ParsedModel, tensor: TensorRecord) => void;
+  onOpenDtypeAtlas: () => void;
 }) {
   const comparison = useMemo(() => compareModels(left, right), [left, right]);
   const [query, setQuery] = useState("");
@@ -734,6 +793,15 @@ function ComparisonWorkspace({
         >
           <Square className="wv-icon" aria-hidden="true" />
           <span>Single</span>
+        </button>
+        <button
+          className="wv-icon-button"
+          type="button"
+          title="Open dtype atlas"
+          aria-label="Open dtype atlas"
+          onClick={onOpenDtypeAtlas}
+        >
+          <BookOpen className="wv-icon" aria-hidden="true" />
         </button>
         <label>
           <span>Left</span>

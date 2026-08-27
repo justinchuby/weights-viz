@@ -1,4 +1,8 @@
 import type { TensorRecord, WeightFormat } from "@weights-viz/core";
+import {
+  createGgufQuantizationGuide,
+  type GgufQuantizationGuide
+} from "./gguf-quantization";
 
 export type EncodingTone =
   | "sign"
@@ -57,6 +61,7 @@ export interface DtypeEducation {
   elementCount: bigint;
   tensorBitsPerValue?: number;
   f32CompressionRatio?: number;
+  quantization?: GgufQuantizationGuide;
 }
 
 interface ScalarSpec {
@@ -169,6 +174,7 @@ export function createDtypeEducation(
       );
       const packing = ggufPacking(dtype, nominalBits);
       const kind = ggufBlockKind(dtype);
+      const quantization = createGgufQuantizationGuide(dtype);
       return {
         format,
         formatLabel: FORMAT_LABELS[format],
@@ -185,11 +191,86 @@ export function createDtypeEducation(
         block,
         formula: kind.formula,
         concepts: ggufConcepts(dtype, block),
+        ...(quantization ? { quantization } : {}),
         elementCount,
         ...(tensorBitsPerValue !== undefined ? { tensorBitsPerValue } : {}),
         ...(f32CompressionRatio !== undefined ? { f32CompressionRatio } : {})
       };
     }
+    const quantization = createGgufQuantizationGuide(dtype);
+    if (quantization) {
+      const nominalBits = ggufNominalBits(dtype);
+      const kind = ggufBlockKind(dtype);
+      const legacy =
+        dtype === "Q4_2" ||
+        dtype === "Q4_3" ||
+        /_(?:4_4|4_8|8_8)$/.test(dtype);
+      return {
+        format,
+        formatLabel: FORMAT_LABELS[format],
+        dtype,
+        family: legacy ? "Legacy / removed GGML layout" : "Interleaved kernel layout",
+        summary: quantization.purpose,
+        storageNote: legacy
+          ? "GGUF preserves the historical type ID, but this visualizer does not infer a modern block layout for it."
+          : "GGUF stores a pre-interleaved GGML representation intended for a matching architecture-specific kernel.",
+        ...(nominalBits !== undefined ? { bitsPerValue: nominalBits } : {}),
+        segments: nominalBits
+          ? [{ label: "quantized code", bits: nominalBits, tone: "codes" }]
+          : [],
+        formula: kind.formula,
+        concepts: [
+          {
+            term: "Compatibility",
+            explanation: legacy
+              ? "Retained for recognizing older files; new converters should use a current type."
+              : "The runtime needs a kernel that understands this exact interleaved layout."
+          },
+          {
+            term: "Type ID",
+            explanation: `GGUF records ${dtype} as a distinct GGML storage type.`
+          }
+        ],
+        quantization,
+        elementCount,
+        ...(tensorBitsPerValue !== undefined ? { tensorBitsPerValue } : {}),
+        ...(f32CompressionRatio !== undefined ? { f32CompressionRatio } : {})
+      };
+    }
+  }
+
+  if (format === "onnx" && (dtype === "STRING" || dtype === "UNDEFINED")) {
+    const stringType = dtype === "STRING";
+    return {
+      format,
+      formatLabel: FORMAT_LABELS[format],
+      dtype,
+      family: stringType ? "Variable-length text" : "Unspecified sentinel",
+      summary: stringType
+        ? "ONNX STRING tensors contain length-delimited text values, so there is no fixed number of bits per element."
+        : "UNDEFINED is a TensorProto sentinel indicating that no concrete element type was assigned; it is not a numerical storage encoding.",
+      storageNote: stringType
+        ? "String elements are protobuf byte strings rather than a fixed-width raw_data array."
+        : "A valid numerical initializer should use a concrete TensorProto data type before execution.",
+      segments: [],
+      concepts: [
+        {
+          term: stringType ? "Variable length" : "Type checking",
+          explanation: stringType
+            ? "Every element can occupy a different number of encoded bytes."
+            : "Graph validation and shape/type inference should resolve executable tensor types."
+        },
+        {
+          term: "Graph semantics",
+          explanation: stringType
+            ? "String tensors are useful for model inputs and preprocessing, not numerical matrix kernels."
+            : "The sentinel preserves schema state but supplies no arithmetic interpretation."
+        }
+      ],
+      elementCount,
+      ...(tensorBitsPerValue !== undefined ? { tensorBitsPerValue } : {}),
+      ...(f32CompressionRatio !== undefined ? { f32CompressionRatio } : {})
+    };
   }
 
   const scalar = scalarSpec(dtype);
@@ -364,7 +445,7 @@ function createBlockEncoding(
       ...(metadataBits > 0
         ? [
             {
-              label: "scale / lookup metadata",
+              label: blockMetadataLabel(dtype),
               bits: metadataBits,
               tone: "metadata" as const
             }
@@ -373,6 +454,18 @@ function createBlockEncoding(
       { label: `${elements} packed codes`, bits: codeBits, tone: "codes" }
     ]
   };
+}
+
+function blockMetadataLabel(dtype: string): string {
+  if (dtype === "Q8_1") return "F16 scale + scaled sum";
+  if (dtype === "Q8_K") return "F32 scale + 16 group sums";
+  if (dtype === "MXFP4") return "E8M0 shared scale";
+  if (dtype === "NVFP4") return "4 UE4M3 local scales";
+  if (dtype === "Q4_1" || dtype === "Q5_1") return "scale + minimum";
+  if (/^Q[245]_K$/.test(dtype)) return "global/local scales + minima";
+  if (/^Q[36]_K$/.test(dtype)) return "global + local scales";
+  if (dtype.startsWith("IQ")) return "scale / codebook metadata";
+  return "scale / block metadata";
 }
 
 function ggufNominalBits(dtype: string): number | undefined {
@@ -400,6 +493,30 @@ function ggufBlockKind(dtype: string): {
   summary: string;
   formula: NonNullable<DtypeEducation["formula"]>;
 } {
+  if (dtype === "IQ4_NL") {
+    return {
+      family: "Fixed nonlinear codebook quantization",
+      summary:
+        "IQ4_NL uses four-bit indices into a fixed nonlinear 16-value codebook and one shared scale for every 32 weights.",
+      formula: {
+        expression: "weight ≈ scale × codebook[index]",
+        explanation:
+          "The nonlinear grid is fixed by the format; conversion selects indices and refines the block scale without requiring calibration importance."
+      }
+    };
+  }
+  if (dtype === "Q8_1") {
+    return {
+      family: "Dot-product companion block",
+      summary:
+        "Q8_1 stores 32 signed eight-bit values, one F16 scale, and one F16 scaled sum used to accelerate offset corrections in paired dot products.",
+      formula: {
+        expression: "weight ≈ scale × q",
+        explanation:
+          "The scaled sum is block metadata for dot-product algebra, not a minimum or zero-point."
+      }
+    };
+  }
   if (dtype.startsWith("IQ")) {
     return {
       family: "Importance-aware codebook quantization",
@@ -412,13 +529,30 @@ function ggufBlockKind(dtype: string): {
       }
     };
   }
+  if (dtype === "Q8_K") {
+    return {
+      family: "Dot-product companion block",
+      summary:
+        "Q8_K stores 256 signed eight-bit values under one F32 scale, plus 16 group sums used by paired K-quant dot-product kernels.",
+      formula: {
+        expression: "weight ≈ scale × q",
+        explanation:
+          "The group sums do not rescale individual values; they let affine paired kernels apply offset corrections outside the inner multiply loop."
+      }
+    };
+  }
   if (/^Q\d_K/.test(dtype)) {
+    const affine = ["Q2_K", "Q4_K", "Q5_K"].includes(dtype);
     return {
       family: "K-quant super-block",
       summary:
-        "K-quants group 256 weights into a super-block with a global scale and compact per-group scales or minima.",
+        `K-quants group 256 weights into a super-block with a global scale and compact per-group ${
+          affine ? "scales plus minima" : "scales"
+        }.`,
       formula: {
-        expression: "weight ≈ globalScale × subScale × q + minimum",
+        expression: affine
+          ? "weight ≈ globalScale × subScale × q + minimum"
+          : "weight ≈ globalScale × subScale × q",
         explanation:
           "Hierarchical scales adapt to local ranges while sharing metadata across a larger block."
       }
@@ -450,13 +584,13 @@ function ggufBlockKind(dtype: string): {
   }
   if (dtype.startsWith("NVFP4")) {
     return {
-      family: "Two-level scaled FP4",
+      family: "Locally scaled FP4",
       summary:
-        "NVFP4 stores compact FP4 values with local block scales and a higher-level scale to cover a wider model range.",
+        "NVFP4 divides 64 values into four 16-value groups, each with its own UE4M3 scale, and stores the values as packed E2M1 FP4.",
       formula: {
-        expression: "weight ≈ globalScale × blockScale × FP4",
+        expression: "weight ≈ localScale × FP4(E2M1)",
         explanation:
-          "Two scale levels preserve local detail while keeping each weight at four payload bits."
+          "Each independent 16-value group uses one unsigned E4M3 scale; there is no additional global scale in the GGML block."
       }
     };
   }
@@ -499,7 +633,12 @@ function ggufConcepts(
       explanation: `${formatDecimal(block.effectiveBitsPerValue)} bits per weight includes codes and all block metadata.`
     },
     {
-      term: dtype.includes("_1") ? "Minimum / offset" : "Scale",
+      term:
+        dtype === "Q8_1"
+          ? "Scaled sum"
+          : dtype.includes("_1")
+            ? "Minimum / offset"
+            : "Scale",
       explanation: kind.formula?.explanation ?? "Block metadata reconstructs the local value range."
     },
     {

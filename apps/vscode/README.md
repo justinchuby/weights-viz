@@ -12,8 +12,9 @@ Code.
 - View a Canvas byte map ordered by exact file address, with visible alignment
   gaps and drag-to-pan navigation.
 - Inspect tensor names, shapes, dtypes, exact offsets, lengths, and storage.
-- Click a dtype label to see its bit fields, packing, quantization blocks,
-  scales, offsets, and effective bits per weight.
+- Open the **Dtype Atlas** or click a dtype label to learn its bit fields,
+  packing, quantization blocks, scale selection, inference path, and kernel
+  optimizations without loading a separate reference model.
 - Search file-level metadata, including GGUF model and tokenizer KV entries.
 - Sample values from SafeTensors and supported GGUF types on demand.
 - Open `*.safetensors.index.json` to combine model shards automatically.

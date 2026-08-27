@@ -1,5 +1,16 @@
 export type WeightFormat = "safetensors" | "gguf" | "onnx";
 
+export interface DtypeCatalogEntry {
+  format: WeightFormat;
+  dtype: string;
+  typeId?: number;
+  bitsPerValue?: number;
+  scalarBytes?: number;
+  blockBytes?: number;
+  blockElements?: number;
+  sampleSupport: TensorRecord["sampleSupport"];
+}
+
 export interface Diagnostic {
   severity: "info" | "warning" | "error";
   message: string;
