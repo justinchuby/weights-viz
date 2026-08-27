@@ -112,7 +112,7 @@ Local files never leave the device.
 
 ## Development
 
-Requirements: Node.js 20 or newer and pnpm 10.
+Requirements: Node.js 20.19+ or 22.12+ and pnpm 11.
 
 ```sh
 pnpm install

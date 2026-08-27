@@ -24,9 +24,11 @@
     "visualization"
   ],
   "engines": {
-    "vscode": "^1.95.0"
+    "vscode": "^1.134.0"
   },
-  "categories": ["Visualization"],
+  "categories": [
+    "Visualization"
+  ],
   "activationEvents": [
     "onCustomEditor:weightsViz.viewer",
     "onCommand:weightsViz.openUrl",
@@ -43,10 +45,18 @@
         "viewType": "weightsViz.viewer",
         "displayName": "Weights Visualization",
         "selector": [
-          { "filenamePattern": "*.gguf" },
-          { "filenamePattern": "*.safetensors" },
-          { "filenamePattern": "*.onnx" },
-          { "filenamePattern": "*.safetensors.index.json" }
+          {
+            "filenamePattern": "*.gguf"
+          },
+          {
+            "filenamePattern": "*.safetensors"
+          },
+          {
+            "filenamePattern": "*.onnx"
+          },
+          {
+            "filenamePattern": "*.safetensors.index.json"
+          }
         ],
         "priority": "default"
       }
@@ -98,24 +108,24 @@
     }
   },
   "scripts": {
-    "build": "pnpm run build:webview && esbuild src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs",
+    "build": "pnpm run build:webview && node esbuild.config.mjs",
     "build:webview": "vite build",
     "package": "pnpm run build && vsce package --no-dependencies --out dist/weights-viz.vsix",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@vitejs/plugin-react": "^6.1.0",
     "@weights-viz/core": "workspace:*",
     "@weights-viz/ui": "workspace:*",
-    "@vitejs/plugin-react": "^5.0.2",
-    "vite": "^7.1.3",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "vite": "^8.2.2"
   },
   "devDependencies": {
-    "@types/react": "^19.1.11",
-    "@types/react-dom": "^19.1.7",
-    "@types/vscode": "^1.95.0",
-    "@vscode/vsce": "^3.6.0",
-    "esbuild": "^0.25.9"
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@types/vscode": "^1.134.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.2"
   }
 }

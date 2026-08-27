@@ -7,7 +7,7 @@ import {
   Columns2,
   Download,
   FileUp,
-  Github,
+  GitFork,
   Info,
   Link2,
   Minus,
@@ -226,7 +226,7 @@ export function WeightsExplorer({
             title="View source on GitHub"
             aria-label="View source on GitHub"
           >
-            <Github className="wv-icon" aria-hidden="true" />
+            <GitFork className="wv-icon" aria-hidden="true" />
           </a>
           {onFilesSelected ? (
             <FilePicker

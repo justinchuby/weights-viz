@@ -2,5 +2,10 @@ packages:
   - apps/*
   - packages/*
 
-onlyBuiltDependencies:
-  - esbuild
+overrides:
+  js-yaml: 4.3.1
+
+allowBuilds:
+  "@vscode/vsce-sign": true
+  esbuild: true
+  keytar: true

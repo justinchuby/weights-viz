@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Upgrade the build toolchain to Vite 8, TypeScript 7, Vitest 4, and pnpm 11,
+  along with the latest React, VS Code, and extension packaging dependencies.
+
 ## 0.2.0
 
 - Add side-by-side model comparison with exact tensor-name correlation, shared
