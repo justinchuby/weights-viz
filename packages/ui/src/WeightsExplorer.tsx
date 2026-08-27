@@ -900,14 +900,38 @@ function ModelSelectControl({
   "aria-label"?: string;
 }) {
   return (
+    <SelectControl
+      value={value}
+      options={models.map((model) => ({ value: model.id, label: model.name }))}
+      onChange={onChange}
+      {...(className ? { className } : {})}
+      {...(ariaLabel ? { "aria-label": ariaLabel } : {})}
+    />
+  );
+}
+
+function SelectControl({
+  value,
+  options,
+  onChange,
+  className,
+  "aria-label": ariaLabel
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+  className?: string;
+  "aria-label"?: string;
+}) {
+  return (
     <span className={`wv-select-control wv-toolbar-control${className ? ` ${className}` : ""}`}>
       <select
         {...(ariaLabel ? { "aria-label": ariaLabel } : {})}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
-        {models.map((model) => (
-          <option key={model.id} value={model.id}>{model.name}</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>
       <ChevronDown className="wv-icon" aria-hidden="true" />
@@ -2068,18 +2092,16 @@ function MetadataInspector({
       <div className="wv-tensor-type">{file.format.toUpperCase()}</div>
       <h2>{file.name}</h2>
       {files.length > 1 && (
-        <select
+        <SelectControl
           className="wv-file-select"
           aria-label="Metadata file"
           value={file.id}
-          onChange={(event) => onFileChange(event.target.value)}
-        >
-          {files.map((candidate) => (
-            <option key={candidate.id} value={candidate.id}>
-              {candidate.name}
-            </option>
-          ))}
-        </select>
+          options={files.map((candidate) => ({
+            value: candidate.id,
+            label: candidate.name
+          }))}
+          onChange={onFileChange}
+        />
       )}
       <div className="wv-metadata-summary">
         <span>{Object.keys(file.metadata).length} entries</span>
