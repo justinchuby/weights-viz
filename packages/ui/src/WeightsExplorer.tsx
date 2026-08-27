@@ -14,6 +14,7 @@ import {
   MousePointerClick,
   Plus,
   RotateCcw,
+  Square,
   X
 } from "lucide-react";
 import type {
@@ -364,11 +365,13 @@ export function WeightsExplorer({
               <div className="wv-panel-actions">
                 {models.length > 1 && (
                   <button
-                    className="wv-button"
+                    className="wv-button wv-icon-label wv-toolbar-control"
                     type="button"
+                    title="Compare two models"
                     onClick={() => setComparisonMode(true)}
                   >
-                    Compare
+                    <Columns2 className="wv-icon" aria-hidden="true" />
+                    <span>Compare</span>
                   </button>
                 )}
                 <p>Wheel to scroll · pinch or Ctrl/⌘ + wheel to zoom · drag to pan</p>
@@ -664,30 +667,33 @@ function ComparisonWorkspace({
     <section className={`wv-comparison${compact ? " compact" : ""}`}>
       <div className="wv-comparison-toolbar">
         <button
-          className="wv-button wv-icon-label"
+          className="wv-button wv-icon-label wv-toolbar-control"
           type="button"
           title="Return to single-model view"
           onClick={onExit}
         >
-          <Columns2 className="wv-icon" aria-hidden="true" />
+          <Square className="wv-icon" aria-hidden="true" />
           <span>Single</span>
         </button>
         <label>
           <span>Left</span>
-          <select
-            value={left.id}
-            onChange={(event) => {
-              if (event.target.value === right.id) onRightChange(left.id);
-              onLeftChange(event.target.value);
-            }}
-          >
-            {models.map((model) => (
-              <option key={model.id} value={model.id}>{model.name}</option>
-            ))}
-          </select>
+          <span className="wv-select-control wv-toolbar-control">
+            <select
+              value={left.id}
+              onChange={(event) => {
+                if (event.target.value === right.id) onRightChange(left.id);
+                onLeftChange(event.target.value);
+              }}
+            >
+              {models.map((model) => (
+                <option key={model.id} value={model.id}>{model.name}</option>
+              ))}
+            </select>
+            <ChevronDown className="wv-icon" aria-hidden="true" />
+          </span>
         </label>
         <button
-          className="wv-swap"
+          className="wv-swap wv-toolbar-control"
           type="button"
           title="Swap models"
           aria-label="Swap models"
@@ -700,17 +706,20 @@ function ComparisonWorkspace({
         </button>
         <label>
           <span>Right</span>
-          <select
-            value={right.id}
-            onChange={(event) => {
-              if (event.target.value === left.id) onLeftChange(right.id);
-              onRightChange(event.target.value);
-            }}
-          >
-            {models.map((model) => (
-              <option key={model.id} value={model.id}>{model.name}</option>
-            ))}
-          </select>
+          <span className="wv-select-control wv-toolbar-control">
+            <select
+              value={right.id}
+              onChange={(event) => {
+                if (event.target.value === left.id) onLeftChange(right.id);
+                onRightChange(event.target.value);
+              }}
+            >
+              {models.map((model) => (
+                <option key={model.id} value={model.id}>{model.name}</option>
+              ))}
+            </select>
+            <ChevronDown className="wv-icon" aria-hidden="true" />
+          </span>
         </label>
         <div className="wv-tensor-search">
           <input

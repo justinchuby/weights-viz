@@ -154,6 +154,7 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-panel-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
 .wv-panel-actions p { margin: 0; }
 .wv-panel-actions .wv-button { padding: 6px 10px; font-size: 11px; }
+.wv-panel-actions .wv-toolbar-control { padding: 0 9px; font-size: 12px; }
 .wv-model-select { display: block; max-width: min(44vw, 440px); margin-top: 4px; padding: 4px 7px; }
 .wv-map-toolbar { min-height: 46px; display: flex; align-items: center; gap: 14px; padding: 7px 16px; border-bottom: 1px solid var(--wv-border); background: var(--wv-surface); }
 .wv-tensor-search { width: min(360px, 46%); flex: none; display: flex; align-items: stretch; background: var(--wv-surface-alt); border: 1px solid var(--wv-border); border-radius: 3px; }
@@ -192,17 +193,22 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-comparison.compact { height: 100%; }
 .wv-comparison-toolbar { min-height: 46px; padding: 5px 8px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--wv-border); background: var(--wv-surface); }
 .wv-comparison-toolbar > label { min-width: 0; flex: 1; display: flex; align-items: center; gap: 7px; color: var(--wv-faint); font: 600 9px ui-monospace, monospace; text-transform: uppercase; }
-.wv-comparison-toolbar select { min-width: 0; width: 100%; padding: 6px 7px; color: var(--wv-text); background: var(--wv-surface-alt); border: 1px solid var(--wv-border); }
-.wv-comparison-toolbar .wv-button { padding: 6px 8px; }
-.wv-comparison-toolbar .wv-tensor-search { width: min(300px, 24%); }
-.wv-swap { flex: none; border: 1px solid var(--wv-border); color: var(--wv-accent); background: var(--wv-surface-alt); padding: 6px 8px; cursor: pointer; font-size: 16px; }
+.wv-toolbar-control { height: 34px; color: var(--wv-text); background: var(--wv-surface-alt); border: 1px solid var(--wv-border); border-radius: 4px; }
+.wv-toolbar-control:hover { color: var(--wv-accent); background: var(--wv-surface-raised); border-color: var(--wv-accent); }
+.wv-comparison-toolbar .wv-button { padding: 0 9px; font-size: 12px; font-weight: 600; }
+.wv-select-control { min-width: 0; position: relative; flex: 1; display: flex; align-items: center; }
+.wv-select-control:focus-within { border-color: var(--wv-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--wv-accent) 18%, transparent); }
+.wv-select-control select { min-width: 0; width: 100%; height: 100%; appearance: none; padding: 0 28px 0 9px; color: var(--wv-text); background: transparent; border: 0; border-radius: inherit; outline: 0; font-size: 12px; text-transform: none; cursor: pointer; }
+.wv-select-control > .wv-icon { position: absolute; right: 8px; width: 13px; height: 13px; color: var(--wv-muted); pointer-events: none; }
+.wv-comparison-toolbar .wv-tensor-search { width: min(300px, 24%); height: 34px; border-radius: 4px; }
+.wv-swap { width: 34px; flex: none; display: grid; place-items: center; padding: 0; color: var(--wv-accent); cursor: pointer; }
 .wv-diff-summary { flex: none; display: flex; align-items: center; gap: 3px; }
-.wv-diff-summary button { min-width: 55px; display: flex; align-items: baseline; justify-content: center; gap: 5px; padding: 5px 6px; color: var(--wv-muted); background: var(--wv-surface-alt); border: 1px solid transparent; cursor: pointer; }
+.wv-diff-summary button { min-width: 55px; height: 34px; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0 6px; color: var(--wv-muted); background: var(--wv-surface-alt); border: 1px solid transparent; border-radius: 4px; cursor: pointer; }
 .wv-diff-summary button.active { color: var(--wv-text); border-color: var(--wv-accent); }
 .wv-diff-summary button b { color: inherit; font: 600 12px ui-monospace, monospace; }
 .wv-diff-summary button span, .wv-unchanged-count { font: 9px ui-monospace, monospace; text-transform: uppercase; }
 .wv-unchanged-count { padding: 0 5px; color: var(--wv-faint); white-space: nowrap; }
-.wv-structure-note { display: inline-flex; align-items: center; gap: 4px; padding: 5px 6px; color: var(--wv-warning-text); background: var(--wv-warning-bg); border: 1px solid var(--wv-warning-border); font: 9px ui-monospace, monospace; white-space: nowrap; cursor: help; }
+.wv-structure-note { height: 34px; display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; color: var(--wv-warning-text); background: var(--wv-warning-bg); border: 1px solid var(--wv-warning-border); border-radius: 4px; font: 9px ui-monospace, monospace; white-space: nowrap; cursor: help; }
 .wv-structure-note .wv-icon { width: 12px; height: 12px; }
 .wv-comparison-grid { min-width: 620px; min-height: 0; flex: 1; display: grid; grid-template-columns: repeat(2, minmax(300px, 1fr)); grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; background: var(--wv-border); gap: 1px; }
 .wv-comparison-pane-head { min-width: 0; padding: 8px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 2px 8px; background: var(--wv-surface); }
