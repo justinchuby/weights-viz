@@ -595,6 +595,12 @@ function ComparisonWorkspace({
     );
   };
 
+  const clearSelection = () => {
+    setSelectedPair(undefined);
+    setLeftNavigation(undefined);
+    setRightNavigation(undefined);
+  };
+
   const selectTensor = (side: "left" | "right", tensor: TensorRecord) => {
     const pair =
       side === "left"
@@ -752,6 +758,7 @@ function ComparisonWorkspace({
             ? { emptyState: "No exact-name counterpart on the left" }
             : {})}
           onSelect={(tensor) => selectTensor("left", tensor)}
+          onClearSelection={clearSelection}
         />
         <WeightMap
           model={right}
@@ -772,6 +779,7 @@ function ComparisonWorkspace({
             ? { emptyState: "No exact-name counterpart on the right" }
             : {})}
           onSelect={(tensor) => selectTensor("right", tensor)}
+          onClearSelection={clearSelection}
         />
         <ComparisonTensorDetail
           {...(selectedPair?.left ? { tensor: selectedPair.left } : {})}
@@ -930,7 +938,8 @@ function WeightMap({
   resolutionStep: controlledResolutionStep,
   onResolutionStepChange,
   emptyState,
-  onSelect
+  onSelect,
+  onClearSelection
 }: {
   model: ParsedModel;
   query: string;
@@ -943,6 +952,7 @@ function WeightMap({
   onResolutionStepChange?: (step: number) => void;
   emptyState?: string;
   onSelect: (tensor: TensorRecord) => void;
+  onClearSelection?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1180,6 +1190,7 @@ function WeightMap({
           if (!drag.moved) {
             const hit = hitTest(event.clientX, event.clientY);
             if (hit?.kind === "tensor" && hit.tensor) onSelect(hit.tensor);
+            else onClearSelection?.();
           }
           dragRef.current = undefined;
           setDragging(false);
