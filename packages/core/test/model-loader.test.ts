@@ -3,6 +3,7 @@ import {
   loadSources,
   MemorySource,
   normalizeModelUrl,
+  parseGgufShardName,
   validateOnnxExternalLocation
 } from "../src";
 
@@ -20,6 +21,66 @@ function safeTensor(name: string): MemorySource {
 }
 
 describe("loadSources", () => {
+  it("groups conventionally named GGUF shards in numeric order", async () => {
+    const models = await loadSources([
+      emptyGguf("model-00002-of-00002.gguf"),
+      emptyGguf("model-00001-of-00002.gguf")
+    ]);
+
+    expect(models).toHaveLength(1);
+    expect(models[0]?.name).toBe("model");
+    expect(models[0]?.files.map((file) => file.name)).toEqual([
+      "model-00001-of-00002.gguf",
+      "model-00002-of-00002.gguf"
+    ]);
+    expect(models[0]?.diagnostics).toEqual([]);
+  });
+
+  it("reports missing GGUF shards while retaining available files", async () => {
+    const models = await loadSources([
+      emptyGguf("model-00001-of-00003.gguf"),
+      emptyGguf("model-00003-of-00003.gguf")
+    ]);
+
+    expect(models[0]?.files).toHaveLength(2);
+    expect(models[0]?.diagnostics).toContainEqual(
+      expect.objectContaining({ message: expect.stringContaining("2 of 3") })
+    );
+  });
+
+  it("keeps GGUF families with different declared totals separate", async () => {
+    const models = await loadSources([
+      emptyGguf("model-00001-of-00001.gguf"),
+      emptyGguf("model-00001-of-00002.gguf"),
+      emptyGguf("model-00002-of-00002.gguf")
+    ]);
+
+    expect(models).toHaveLength(2);
+    expect(models.map((model) => model.files.length).sort()).toEqual([1, 2]);
+  });
+
+  it("bounds malicious local GGUF shard counts", async () => {
+    const models = await loadSources([
+      emptyGguf("model-00001-of-4294967296.gguf")
+    ]);
+
+    expect(models[0]?.files).toHaveLength(1);
+    expect(models[0]?.diagnostics).toContainEqual(
+      expect.objectContaining({ message: expect.stringContaining("1024 shard limit") })
+    );
+  });
+
+  it("parses only valid GGUF shard names", () => {
+    expect(parseGgufShardName("model-00002-of-00010.gguf")).toEqual({
+      prefix: "model",
+      index: 2,
+      total: 10,
+      width: 5
+    });
+    expect(parseGgufShardName("model.gguf")).toBeUndefined();
+    expect(parseGgufShardName("model-00011-of-00010.gguf")).toBeUndefined();
+  });
+
   it("joins shards named by a SafeTensors index", async () => {
     const index = new MemorySource(
       "model.safetensors.index.json",
@@ -47,6 +108,16 @@ describe("loadSources", () => {
     ]);
     expect(models[0]?.diagnostics).toEqual([]);
   });
+
+  function emptyGguf(name: string): MemorySource {
+    const bytes = new Uint8Array(24);
+    const view = new DataView(bytes.buffer);
+    view.setUint32(0, 0x46554747, true);
+    view.setUint32(4, 3, true);
+    view.setBigUint64(8, 0n, true);
+    view.setBigUint64(16, 0n, true);
+    return new MemorySource(name, bytes);
+  }
 
   describe("normalizeModelUrl", () => {
     it("turns Hugging Face blob pages into ranged download URLs", () => {

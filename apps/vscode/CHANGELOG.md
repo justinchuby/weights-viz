@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.2.0
+
+- Add side-by-side model comparison with exact tensor-name correlation, shared
+  resolution, synchronized search selection, and changed/only-side highlighting.
+- Compare GGUF, SafeTensors, and ONNX models in any format combination.
+- Group conventionally named sharded GGUF files and discover sibling shards when
+  opening any shard in VS Code.
+- Add Explorer and Command Palette workflows for selecting and comparing models.
+- Make the web app installable as an offline-capable PWA and allow multiple
+  remote model URLs to be loaded together.
+
 ## 0.1.2
 
 - Allow the final address row to scroll to the top of the map.

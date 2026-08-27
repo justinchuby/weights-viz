@@ -2,6 +2,7 @@ export * from "./binary";
 export * from "./data-source";
 export * from "./detect";
 export * from "./errors";
+export * from "./comparison";
 export * from "./types";
 export * from "./parsers/gguf";
 export * from "./parsers/onnx";

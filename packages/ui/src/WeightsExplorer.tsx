@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  ModelComparison,
   ParsedFile,
   ParsedModel,
+  TensorComparison,
+  TensorComparisonStatus,
   TensorRecord,
   TensorSample
+} from "@weights-viz/core";
+import {
+  compareModels,
+  tensorComparisonKey
 } from "@weights-viz/core";
 import {
   addressMapMaxScrollY,
@@ -38,6 +45,9 @@ interface WeightsExplorerProps {
   defaultUrl?: string;
   intro?: string;
   compact?: boolean;
+  defaultCompare?: boolean;
+  installAvailable?: boolean;
+  onInstall?: () => void;
 }
 
 interface HoverInfo {
@@ -74,7 +84,10 @@ export function WeightsExplorer({
   onSample,
   defaultUrl = "",
   intro,
-  compact = false
+  compact = false,
+  defaultCompare = false,
+  installAvailable = false,
+  onInstall
 }: WeightsExplorerProps) {
   const [activeModelId, setActiveModelId] = useState<string>();
   const [selected, setSelected] = useState<TensorRecord>();
@@ -88,12 +101,17 @@ export function WeightsExplorer({
   const [pickerBlocked, setPickerBlocked] = useState(false);
   const [tensorNavigation, setTensorNavigation] =
     useState<TensorNavigationTarget>();
+  const [comparisonMode, setComparisonMode] = useState(defaultCompare);
+  const [rightModelId, setRightModelId] = useState<string>();
   const tensorNavigationSequence = useRef(0);
   const activeModel =
     models.find((model) => model.id === activeModelId) ?? models[0];
   const metadataFile =
     activeModel?.files.find((file) => file.id === metadataFileId) ??
     activeModel?.files[0];
+  const comparisonRight =
+    models.find((model) => model.id === rightModelId && model.id !== activeModel?.id) ??
+    models.find((model) => model.id !== activeModel?.id);
 
   useEffect(() => {
     if (activeModel && activeModel.id !== activeModelId) {
@@ -105,6 +123,17 @@ export function WeightsExplorer({
       setTensorNavigation(undefined);
     }
   }, [activeModel, activeModelId]);
+
+  useEffect(() => {
+    if (defaultCompare) setComparisonMode(true);
+  }, [defaultCompare]);
+
+  useEffect(() => {
+    if (comparisonRight && comparisonRight.id !== rightModelId) {
+      setRightModelId(comparisonRight.id);
+    }
+    if (models.length === 1) setComparisonMode(false);
+  }, [comparisonRight, models.length, rightModelId]);
 
   const matchingTensors = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -189,15 +218,20 @@ export function WeightsExplorer({
                 if (url.trim()) onOpenUrl(url.trim());
               }}
             >
-              <input
-                aria-label="Model URL"
-                type="url"
-                placeholder="https://…/model.gguf"
+              <textarea
+                aria-label="Model URLs"
+                rows={1}
+                placeholder="One or more model URLs"
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
               />
               <button className="wv-button" type="submit">Load URL</button>
             </form>
+          )}
+          {installAvailable && onInstall && (
+            <button className="wv-button" type="button" onClick={onInstall}>
+              Install app
+            </button>
           )}
         </div>
       </header>}
@@ -246,6 +280,16 @@ export function WeightsExplorer({
             ) : null}
           </div>
         </section>
+      ) : comparisonMode && comparisonRight ? (
+        <ComparisonWorkspace
+          models={models}
+          left={activeModel}
+          right={comparisonRight}
+          compact={compact}
+          onLeftChange={setActiveModelId}
+          onRightChange={setRightModelId}
+          onExit={() => setComparisonMode(false)}
+        />
       ) : (
         <section className="wv-workspace">
           <div className="wv-map-panel">
@@ -267,7 +311,18 @@ export function WeightsExplorer({
                   <h2>{activeModel.name}</h2>
                 )}
               </div>
-              <p>Wheel to scroll · pinch or Ctrl/⌘ + wheel to zoom · drag to pan</p>
+              <div className="wv-panel-actions">
+                {models.length > 1 && (
+                  <button
+                    className="wv-button"
+                    type="button"
+                    onClick={() => setComparisonMode(true)}
+                  >
+                    Compare
+                  </button>
+                )}
+                <p>Wheel to scroll · pinch or Ctrl/⌘ + wheel to zoom · drag to pan</p>
+              </div>
             </div>
             <div className="wv-map-toolbar">
               <div className="wv-tensor-search">
@@ -468,17 +523,402 @@ export function WeightsExplorer({
   );
 }
 
+type ComparisonFilter = "all" | "changed" | "left-only" | "right-only";
+
+function ComparisonWorkspace({
+  models,
+  left,
+  right,
+  compact,
+  onLeftChange,
+  onRightChange,
+  onExit
+}: {
+  models: ParsedModel[];
+  left: ParsedModel;
+  right: ParsedModel;
+  compact: boolean;
+  onLeftChange: (id: string) => void;
+  onRightChange: (id: string) => void;
+  onExit: () => void;
+}) {
+  const comparison = useMemo(() => compareModels(left, right), [left, right]);
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<ComparisonFilter>("all");
+  const [resolutionStep, setResolutionStep] = useState(0);
+  const [selectedPair, setSelectedPair] = useState<TensorComparison>();
+  const [leftNavigation, setLeftNavigation] = useState<TensorNavigationTarget>();
+  const [rightNavigation, setRightNavigation] = useState<TensorNavigationTarget>();
+  const navigationSequence = useRef(0);
+
+  const indexes = useMemo(() => comparisonIndexes(comparison), [comparison]);
+  const matchingPairs = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return [];
+    return comparison.tensors.filter(
+      (pair) =>
+        pair.name.toLowerCase().includes(needle) ||
+        pair.left?.dtype.toLowerCase().includes(needle) ||
+        pair.right?.dtype.toLowerCase().includes(needle)
+    );
+  }, [comparison, query]);
+  const selectedMatchIndex = selectedPair
+    ? matchingPairs.indexOf(selectedPair)
+    : -1;
+  const referenceFileSize = largestFileSize([left, right]);
+
+  useEffect(() => {
+    setSelectedPair(undefined);
+    setLeftNavigation(undefined);
+    setRightNavigation(undefined);
+  }, [left.id, right.id]);
+
+  const selectPair = (pair: TensorComparison) => {
+    setSelectedPair(pair);
+    const sequence = ++navigationSequence.current;
+    setLeftNavigation(
+      pair.left ? { tensor: pair.left, sequence } : undefined
+    );
+    setRightNavigation(
+      pair.right ? { tensor: pair.right, sequence } : undefined
+    );
+  };
+
+  const selectTensor = (side: "left" | "right", tensor: TensorRecord) => {
+    const pair =
+      side === "left"
+        ? indexes.leftPairs.get(tensorComparisonKey(tensor))
+        : indexes.rightPairs.get(tensorComparisonKey(tensor));
+    if (pair) selectPair(pair);
+  };
+
+  const navigateMatches = (direction: 1 | -1) => {
+    if (!matchingPairs.length) return;
+    const index =
+      selectedMatchIndex < 0
+        ? direction > 0
+          ? 0
+          : matchingPairs.length - 1
+        : (selectedMatchIndex + direction + matchingPairs.length) %
+          matchingPairs.length;
+    selectPair(matchingPairs[index]!);
+  };
+
+  return (
+    <section className={`wv-comparison${compact ? " compact" : ""}`}>
+      <div className="wv-comparison-toolbar">
+        <button className="wv-button" type="button" onClick={onExit}>
+          Single
+        </button>
+        <label>
+          <span>Left</span>
+          <select
+            value={left.id}
+            onChange={(event) => {
+              if (event.target.value === right.id) onRightChange(left.id);
+              onLeftChange(event.target.value);
+            }}
+          >
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>{model.name}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="wv-swap"
+          type="button"
+          title="Swap models"
+          aria-label="Swap models"
+          onClick={() => {
+            onLeftChange(right.id);
+            onRightChange(left.id);
+          }}
+        >
+          ⇄
+        </button>
+        <label>
+          <span>Right</span>
+          <select
+            value={right.id}
+            onChange={(event) => {
+              if (event.target.value === left.id) onLeftChange(right.id);
+              onRightChange(event.target.value);
+            }}
+          >
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>{model.name}</option>
+            ))}
+          </select>
+        </label>
+        <div className="wv-tensor-search">
+          <input
+            className="wv-filter"
+            aria-label="Search compared tensors"
+            placeholder="Search exact tensor names or dtype"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              navigateMatches(event.shiftKey ? -1 : 1);
+            }}
+          />
+          <span className="wv-search-count">
+            {query.trim()
+              ? `${selectedMatchIndex + 1}/${matchingPairs.length}`
+              : "—"}
+          </span>
+          <button
+            type="button"
+            aria-label="Previous tensor match"
+            disabled={!matchingPairs.length}
+            onClick={() => navigateMatches(-1)}
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            aria-label="Next tensor match"
+            disabled={!matchingPairs.length}
+            onClick={() => navigateMatches(1)}
+          >
+            ↓
+          </button>
+        </div>
+      </div>
+      <div className="wv-diff-summary" aria-label="Tensor comparison summary">
+        <DiffSummaryButton
+          active={filter === "all"}
+          label="All"
+          value={comparison.tensors.length}
+          onClick={() => setFilter("all")}
+        />
+        <DiffSummaryButton
+          active={filter === "changed"}
+          label="Changed"
+          value={comparison.summary.changed + comparison.summary.ambiguous}
+          onClick={() => setFilter("changed")}
+        />
+        <DiffSummaryButton
+          active={filter === "left-only"}
+          label="Removed"
+          value={comparison.summary["left-only"]}
+          onClick={() => setFilter("left-only")}
+        />
+        <DiffSummaryButton
+          active={filter === "right-only"}
+          label="Added"
+          value={comparison.summary["right-only"]}
+          onClick={() => setFilter("right-only")}
+        />
+        <span className="wv-unchanged-count">
+          {comparison.summary.unchanged.toLocaleString()} unchanged
+        </span>
+      </div>
+      <div className="wv-comparison-grid">
+        <ComparisonPaneHeader side="LEFT" model={left} />
+        <ComparisonPaneHeader side="RIGHT" model={right} />
+        <WeightMap
+          model={left}
+          query={query}
+          {...(selectedPair?.left ? { selected: selectedPair.left } : {})}
+          {...(leftNavigation ? { navigationTarget: leftNavigation } : {})}
+          includeTensor={(tensor) =>
+            comparisonStatusVisible(
+              indexes.leftStatuses.get(tensorComparisonKey(tensor)),
+              filter
+            )
+          }
+          diffStatuses={indexes.leftStatuses}
+          referenceFileSize={referenceFileSize}
+          resolutionStep={resolutionStep}
+          onResolutionStepChange={setResolutionStep}
+          onSelect={(tensor) => selectTensor("left", tensor)}
+        />
+        <WeightMap
+          model={right}
+          query={query}
+          {...(selectedPair?.right ? { selected: selectedPair.right } : {})}
+          {...(rightNavigation ? { navigationTarget: rightNavigation } : {})}
+          includeTensor={(tensor) =>
+            comparisonStatusVisible(
+              indexes.rightStatuses.get(tensorComparisonKey(tensor)),
+              filter
+            )
+          }
+          diffStatuses={indexes.rightStatuses}
+          referenceFileSize={referenceFileSize}
+          resolutionStep={resolutionStep}
+          onResolutionStepChange={setResolutionStep}
+          onSelect={(tensor) => selectTensor("right", tensor)}
+        />
+        <ComparisonTensorDetail
+          {...(selectedPair?.left ? { tensor: selectedPair.left } : {})}
+          {...(selectedPair ? { pair: selectedPair } : {})}
+          missingLabel="Not present on the left"
+        />
+        <ComparisonTensorDetail
+          {...(selectedPair?.right ? { tensor: selectedPair.right } : {})}
+          {...(selectedPair ? { pair: selectedPair } : {})}
+          missingLabel="Not present on the right"
+        />
+      </div>
+    </section>
+  );
+}
+
+function comparisonIndexes(comparison: ModelComparison) {
+  const leftStatuses = new Map<string, TensorComparisonStatus>();
+  const rightStatuses = new Map<string, TensorComparisonStatus>();
+  const leftPairs = new Map<string, TensorComparison>();
+  const rightPairs = new Map<string, TensorComparison>();
+  for (const pair of comparison.tensors) {
+    if (pair.left) {
+      const key = tensorComparisonKey(pair.left);
+      leftStatuses.set(key, pair.status);
+      leftPairs.set(key, pair);
+    }
+    if (pair.right) {
+      const key = tensorComparisonKey(pair.right);
+      rightStatuses.set(key, pair.status);
+      rightPairs.set(key, pair);
+    }
+  }
+  return { leftStatuses, rightStatuses, leftPairs, rightPairs };
+}
+
+function comparisonStatusVisible(
+  status: TensorComparisonStatus | undefined,
+  filter: ComparisonFilter
+): boolean {
+  if (filter === "all") return true;
+  if (filter === "changed") return status === "changed" || status === "ambiguous";
+  return status === filter;
+}
+
+function largestFileSize(models: ParsedModel[]): bigint {
+  return models.reduce(
+    (largest, model) =>
+      model.files.reduce(
+        (current, file) => (file.size > current ? file.size : current),
+        largest
+      ),
+    0n
+  );
+}
+
+function ComparisonPaneHeader({
+  side,
+  model
+}: {
+  side: string;
+  model: ParsedModel;
+}) {
+  const tensorCount = model.files.reduce(
+    (total, file) => total + file.tensors.length,
+    0
+  );
+  const totalSize = model.files.reduce(
+    (total, file) => total + file.size,
+    0n
+  );
+  const formats = [...new Set(model.files.map((file) => file.format.toUpperCase()))];
+  return (
+    <header className="wv-comparison-pane-head">
+      <span>{side}</span>
+      <b>{model.name}</b>
+      <small>
+        {formats.join(" + ")} · {model.files.length} files ·{" "}
+        {tensorCount.toLocaleString()} tensors · {formatBytes(totalSize)}
+      </small>
+    </header>
+  );
+}
+
+function ComparisonTensorDetail({
+  tensor,
+  pair,
+  missingLabel
+}: {
+  tensor?: TensorRecord;
+  pair?: TensorComparison;
+  missingLabel: string;
+}) {
+  if (!pair) {
+    return (
+      <footer className="wv-comparison-detail empty">
+        Select a tensor to inspect its exact-name correlation.
+      </footer>
+    );
+  }
+  if (!tensor) {
+    return <footer className="wv-comparison-detail missing">{missingLabel}</footer>;
+  }
+  const changes = Object.entries(pair.changes)
+    .filter(([, changed]) => changed)
+    .map(([name]) => name);
+  return (
+    <footer className={`wv-comparison-detail ${pair.status}`}>
+      <div>
+        <span>{pair.status.replace("-", " ")}</span>
+        <b>{tensor.name}</b>
+      </div>
+      <small>
+        {tensor.dtype} · {formatShape(tensor.shape)} ·{" "}
+        {formatParameterCount(tensor.shape)} params · {formatBytes(tensor.byteLength)}
+      </small>
+      <code>
+        {formatAddress(tensor.byteOffset)} → {formatAddress(tensorEnd(tensor))}
+      </code>
+      {changes.length > 0 && <em>Changed: {changes.join(", ")}</em>}
+    </footer>
+  );
+}
+
+function DiffSummaryButton({
+  active,
+  label,
+  value,
+  onClick
+}: {
+  active: boolean;
+  label: string;
+  value: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={active ? "active" : ""}
+      type="button"
+      onClick={onClick}
+    >
+      <b>{value.toLocaleString()}</b>
+      <span>{label}</span>
+    </button>
+  );
+}
+
 function WeightMap({
   model,
   query,
   selected,
   navigationTarget,
+  includeTensor,
+  diffStatuses,
+  referenceFileSize,
+  resolutionStep: controlledResolutionStep,
+  onResolutionStepChange,
   onSelect
 }: {
   model: ParsedModel;
   query: string;
   selected?: TensorRecord;
   navigationTarget?: TensorNavigationTarget;
+  includeTensor?: (tensor: TensorRecord) => boolean;
+  diffStatuses?: Map<string, TensorComparisonStatus>;
+  referenceFileSize?: bigint;
+  resolutionStep?: number;
+  onResolutionStepChange?: (step: number) => void;
   onSelect: (tensor: TensorRecord) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -494,7 +934,12 @@ function WeightMap({
   const [size, setSize] = useState({ width: 800, height: 600 });
   const [hover, setHover] = useState<HoverInfo>();
   const [zoom, setZoom] = useState(1);
-  const [resolutionStep, setResolutionStep] = useState(0);
+  const [internalResolutionStep, setInternalResolutionStep] = useState(0);
+  const resolutionStep = controlledResolutionStep ?? internalResolutionStep;
+  const setResolutionStep = (step: number) => {
+    if (controlledResolutionStep === undefined) setInternalResolutionStep(step);
+    onResolutionStepChange?.(step);
+  };
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const themeRevision = useThemeRevision();
@@ -506,13 +951,15 @@ function WeightMap({
         size.width,
         needle
           ? (tensor) =>
-              tensor.name.toLowerCase().includes(needle) ||
-              tensor.dtype.toLowerCase().includes(needle)
-          : undefined,
-        resolutionStep
+              (tensor.name.toLowerCase().includes(needle) ||
+                tensor.dtype.toLowerCase().includes(needle)) &&
+              (includeTensor?.(tensor) ?? true)
+          : includeTensor,
+        resolutionStep,
+        referenceFileSize
       );
     },
-    [model, query, resolutionStep, size.width]
+    [includeTensor, model, query, referenceFileSize, resolutionStep, size.width]
   );
   const maxVerticalScroll = addressMapMaxScrollY(layout, size.height, zoom);
 
@@ -583,10 +1030,20 @@ function WeightMap({
     context.save();
     context.translate(offset.x, offset.y);
     context.scale(zoom, zoom);
-    drawAddressMap(context, layout, selected, zoom, offset, size, theme, ratio);
+    drawAddressMap(
+      context,
+      layout,
+      selected,
+      diffStatuses,
+      zoom,
+      offset,
+      size,
+      theme,
+      ratio
+    );
     context.restore();
     drawAddressRulerBackground(context, size, theme, ratio);
-  }, [layout, offset, selected, size, themeRevision, zoom]);
+  }, [diffStatuses, layout, offset, selected, size, themeRevision, zoom]);
 
   const hitTest = (clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -723,7 +1180,7 @@ function WeightMap({
           <button
             aria-label="Finer resolution"
             disabled={resolutionStep <= -2}
-            onClick={() => setResolutionStep((current) => Math.max(-2, current - 1))}
+            onClick={() => setResolutionStep(Math.max(-2, resolutionStep - 1))}
           >
             −
           </button>
@@ -733,7 +1190,7 @@ function WeightMap({
           <button
             aria-label="Coarser resolution"
             disabled={resolutionStep >= 8}
-            onClick={() => setResolutionStep((current) => Math.min(8, current + 1))}
+            onClick={() => setResolutionStep(Math.min(8, resolutionStep + 1))}
           >
             +
           </button>
@@ -969,6 +1426,7 @@ function drawAddressMap(
   context: CanvasRenderingContext2D,
   layout: AddressMapLayout,
   selected: TensorRecord | undefined,
+  diffStatuses: Map<string, TensorComparisonStatus> | undefined,
   zoom: number,
   offset: { x: number; y: number },
   viewport: { width: number; height: number },
@@ -993,12 +1451,20 @@ function drawAddressMap(
 
     for (const span of fileLayout.spans) {
       if (!span.visible) continue;
+      const diffStatus = span.tensor
+        ? diffStatuses?.get(tensorComparisonKey(span.tensor))
+        : undefined;
       const color =
         span.kind === "metadata"
           ? theme.metadata
           : colorForTensor(span.tensor!);
       context.fillStyle = color;
-      context.globalAlpha = span.kind === "metadata" ? 0.92 : 0.88;
+      context.globalAlpha =
+        span.kind === "metadata"
+          ? 0.92
+          : diffStatus === "unchanged"
+            ? 0.38
+            : 0.9;
       for (const rect of span.rects) {
         if (!isVisible(rect, visibleTop, visibleBottom)) continue;
         context.fillRect(rect.x, rect.y, rect.width, rect.height);
@@ -1040,12 +1506,29 @@ function drawAddressMap(
 
     for (const span of fileLayout.spans) {
       if (!span.tensor || !span.visible) continue;
-      context.strokeStyle = theme.mapBackground;
-      context.globalAlpha = 0.92;
-      context.lineWidth = 1 / zoom;
+      const diffStatus = diffStatuses?.get(tensorComparisonKey(span.tensor));
+      context.strokeStyle =
+        diffStatus === "changed" || diffStatus === "ambiguous"
+          ? theme.diffChanged
+          : diffStatus === "left-only"
+            ? theme.diffRemoved
+            : diffStatus === "right-only"
+              ? theme.diffAdded
+            : theme.mapBackground;
+      context.globalAlpha = diffStatus ? 1 : 0.92;
+      context.lineWidth =
+        diffStatus && diffStatus !== "unchanged" ? 2 / zoom : 1 / zoom;
       for (const rect of span.rects) {
         if (isVisible(rect, visibleTop, visibleBottom)) {
           context.strokeRect(rect.x, rect.y, rect.width, rect.height);
+          if (diffStatus === "left-only" || diffStatus === "right-only") {
+            drawDiffPattern(
+              context,
+              rect,
+              zoom,
+              diffStatus === "right-only" ? "added" : "removed"
+            );
+          }
         }
       }
       context.globalAlpha = 1;
@@ -1256,6 +1739,9 @@ interface CanvasTheme {
   accent: string;
   selection: string;
   labelText: string;
+  diffChanged: string;
+  diffAdded: string;
+  diffRemoved: string;
 }
 
 function readCanvasTheme(canvas: HTMLCanvasElement): CanvasTheme {
@@ -1271,8 +1757,40 @@ function readCanvasTheme(canvas: HTMLCanvasElement): CanvasTheme {
     border: read("--wv-border", "#29404f"),
     accent: read("--wv-accent", "#6ee7ff"),
     selection: read("--wv-text", "#ffffff"),
-    labelText: "#071019"
+    labelText: "#071019",
+    diffChanged: read("--wv-diff-changed", "#ffb020"),
+    diffAdded: read("--wv-diff-added", "#65d98a"),
+    diffRemoved: read("--wv-diff-removed", "#ff5c8a")
   };
+}
+
+function drawDiffPattern(
+  context: CanvasRenderingContext2D,
+  rect: AddressRect,
+  zoom: number,
+  kind: "added" | "removed"
+) {
+  const step = 11 / zoom;
+  const mark = 3 / zoom;
+  context.save();
+  context.beginPath();
+  context.rect(rect.x, rect.y, rect.width, rect.height);
+  context.clip();
+  context.globalAlpha = 0.5;
+  context.lineWidth = 1 / zoom;
+  for (let y = rect.y + step / 2; y < rect.y + rect.height; y += step) {
+    for (let x = rect.x + step / 2; x < rect.x + rect.width; x += step) {
+      context.beginPath();
+      context.moveTo(x - mark, y);
+      context.lineTo(x + mark, y);
+      if (kind === "added") {
+        context.moveTo(x, y - mark);
+        context.lineTo(x, y + mark);
+      }
+      context.stroke();
+    }
+  }
+  context.restore();
 }
 
 function useThemeRevision(): number {

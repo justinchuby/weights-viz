@@ -2,7 +2,7 @@
   "name": "weights-viz",
   "displayName": "Weights Viz",
   "description": "Inspect GGUF, SafeTensors, and ONNX model weight layouts.",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "publisher": "justinchuby",
@@ -31,7 +31,10 @@
     "onCustomEditor:weightsViz.viewer",
     "onCommand:weightsViz.openUrl",
     "onCommand:weightsViz.openFiles",
-    "onCommand:weightsViz.visualize"
+    "onCommand:weightsViz.visualize",
+    "onCommand:weightsViz.selectForCompare",
+    "onCommand:weightsViz.compareWithSelected",
+    "onCommand:weightsViz.compareFiles"
   ],
   "main": "./dist/extension.cjs",
   "contributes": {
@@ -60,6 +63,18 @@
       {
         "command": "weightsViz.visualize",
         "title": "Visualize Weights"
+      },
+      {
+        "command": "weightsViz.selectForCompare",
+        "title": "Weights Viz: Select Model for Compare"
+      },
+      {
+        "command": "weightsViz.compareWithSelected",
+        "title": "Weights Viz: Compare with Selected Model"
+      },
+      {
+        "command": "weightsViz.compareFiles",
+        "title": "Weights Viz: Compare Model Weights..."
       }
     ],
     "menus": {
@@ -68,6 +83,16 @@
           "command": "weightsViz.visualize",
           "when": "resourceExtname == .gguf || resourceExtname == .safetensors || resourceExtname == .onnx || resourceFilename =~ /\\.safetensors\\.index\\.json$/ || resourceLangId == textproto",
           "group": "navigation@10"
+        },
+        {
+          "command": "weightsViz.selectForCompare",
+          "when": "resourceExtname == .gguf || resourceExtname == .safetensors || resourceExtname == .onnx || resourceFilename =~ /\\.safetensors\\.index\\.json$/",
+          "group": "weightsViz@20"
+        },
+        {
+          "command": "weightsViz.compareWithSelected",
+          "when": "weightsViz.hasCompareSelection && (resourceExtname == .gguf || resourceExtname == .safetensors || resourceExtname == .onnx || resourceFilename =~ /\\.safetensors\\.index\\.json$/)",
+          "group": "weightsViz@21"
         }
       ]
     }

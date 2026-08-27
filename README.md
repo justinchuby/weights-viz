@@ -12,15 +12,16 @@ sampled values without loading the whole model into memory.
 
 The project ships the same React visualization in two hosts:
 
-- A static Vite web app with drag-and-drop, multi-file selection, and URL input.
-- A VS Code custom editor for model files and SafeTensors indexes.
+- An installable Progressive Web App with drag-and-drop, multi-file selection,
+  URL input, offline local-file support, and side-by-side comparison.
+- A VS Code custom editor and dedicated model comparer.
 
 ## Supported formats
 
 | Format | Layout and metadata | Values | Multi-file / external data |
 | --- | --- | --- | --- |
 | SafeTensors | All official dtypes, including packed F4/F6, plus header metadata, shape, and exact ranges | On-demand samples and statistics for scalar dtypes | `*.safetensors.index.json` automatically joins shards |
-| GGUF v2/v3 | All current GGML tensor type IDs and block sizes, KV metadata, alignment, and exact ranges | On-demand samples for scalar and supported common quantized dtypes | Each GGUF is shown as one model |
+| GGUF v2/v3 | All current GGML tensor type IDs and block sizes, KV metadata, alignment, and exact ranges | On-demand samples for scalar and supported common quantized dtypes | Standard `model-00001-of-000NN.gguf` shards are grouped as one model |
 | ONNX | All current `TensorProto.DataType` values through `INT2`, initializer shape, and exact external-data ranges | Metadata only | Referenced `.data` address spaces are inferred from the manifest; the data files are not required |
 
 Recognizing a dtype and calculating its encoded byte length are separate from
@@ -40,6 +41,37 @@ and the URL field.
 In VS Code the viewer never relies on an HTML file input. **Open files** and
 **Weights Viz: Open Model Files** ask the extension host for the native
 `showOpenDialog` picker, which also works over Remote SSH and in Codespaces.
+Opening any conventionally named GGUF shard discovers its siblings in the same
+directory.
+
+## Comparing models
+
+Load two or more models in the web app and choose **Compare**, or use one of the
+VS Code workflows:
+
+- Run **Weights Viz: Compare Model Weights...** and choose a model for each side.
+- In Explorer, choose **Weights Viz: Select Model for Compare** on the first
+  model, then **Weights Viz: Compare with Selected Model** on the second.
+
+Each side may be a single file or a SafeTensors/GGUF sharded model, and the
+formats may differ. The maps use the same bytes-per-cell resolution. Tensors
+whose names are exactly equal are correlated and can be searched and selected
+together. The comparison reports dtype, shape, parameter-count, encoded-size,
+and storage changes; tensors with different names remain left-only or
+right-only rather than being guessed.
+
+Unchanged tensors are subdued, changed tensors receive an amber outline,
+additions use green `+` marks, and removals use red `−` marks. The maps keep independent
+physical file address spaces and scrolling because offsets across formats or
+different shard layouts are not directly equivalent.
+
+## Installable web app
+
+In Chrome, open the live app and use **Install app** or the browser's install
+action to add Weights Viz as a standalone desktop app. The application shell is
+available offline, so local files can still be visualized and compared without
+a network connection. Model files, HTTP Range responses, and local file data
+are never stored in the service-worker cache.
 
 ## Remote files
 
@@ -48,6 +80,10 @@ in VS Code.
 
 - Share a web visualization by passing the model URL as `?url=...`; the app
   loads it automatically and keeps successful URL loads in the address bar.
+- Share a remote comparison with `?url=<left>&compare=<right>`.
+- Load any number of remote models by repeating the parameter:
+  `?url=<model-a>&url=<model-b>&url=<model-c>`. The URL field also accepts
+  multiple links separated by spaces or newlines.
 - GGUF and SafeTensors are read with progressive HTTP Range requests. Only the
   header, tensor directory, and explicitly requested sample ranges are fetched.
 - Hugging Face `.../blob/...` file-page links are converted automatically to
@@ -55,7 +91,8 @@ in VS Code.
   not identify a file; choose a model file under **Files and versions** first.
 - Public Hugging Face files work directly. Gated/private repositories require
   authentication, so download those files locally and open them from disk.
-- SafeTensors index URLs resolve relative shard URLs automatically.
+- SafeTensors index URLs and standard sharded GGUF URLs resolve sibling shards
+  automatically.
 - The ONNX protobuf manifest is downloaded in full with a 50 MiB limit.
   Referenced external-data layouts are inferred from initializer offsets,
   lengths, shapes, and dtypes without opening the `.data` files; the byte map

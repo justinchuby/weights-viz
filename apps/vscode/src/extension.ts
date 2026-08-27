@@ -7,6 +7,7 @@ import {
   loadModelUrl,
   loadSources,
   OnnxParser,
+  parseGgufShardName,
   SafeTensorsParser,
   SAFETENSORS_INDEX_MAX_BYTES,
   type Parser,
@@ -100,7 +101,8 @@ async function connectPanel(
   panel: vscode.WebviewPanel,
   sources: Map<string, RandomAccessSource>,
   parsers: Record<WeightFormat, Parser>,
-  load: () => Promise<Awaited<ReturnType<typeof loadSources>>>
+  load: () => Promise<Awaited<ReturnType<typeof loadSources>>>,
+  defaultCompare = false
 ): Promise<void> {
   let ready = false;
   let initial: Awaited<ReturnType<typeof loadSources>> | undefined;
@@ -112,7 +114,11 @@ async function connectPanel(
       await panel.webview.postMessage(encode({ type: "error", error: failure }));
     } else if (initial || opened.length) {
       await panel.webview.postMessage(
-        encode({ type: "models", models: [...(initial ?? []), ...opened] })
+        encode({
+          type: "models",
+          models: [...(initial ?? []), ...opened],
+          defaultCompare
+        })
       );
     }
   };
@@ -213,6 +219,34 @@ async function discoverSources(uri: vscode.Uri): Promise<RandomAccessSource[]> {
   if (primary.name.toLowerCase().endsWith(".onnx")) {
     return [primary];
   }
+  const ggufShard = parseGgufShardName(primary.name);
+  if (ggufShard) {
+    const directory = vscode.Uri.joinPath(uri, "..");
+    const entries = await vscode.workspace.fs.readDirectory(directory);
+    const siblings = entries
+      .filter(([, type]) => type === vscode.FileType.File)
+      .map(([name]) => ({ name, shard: parseGgufShardName(name) }))
+      .filter(
+        (
+          entry
+        ): entry is {
+          name: string;
+          shard: NonNullable<ReturnType<typeof parseGgufShardName>>;
+        } =>
+          Boolean(
+            entry.shard &&
+              entry.shard.prefix.toLocaleLowerCase() ===
+                ggufShard.prefix.toLocaleLowerCase() &&
+              entry.shard.total === ggufShard.total
+          )
+      )
+      .sort((left, right) => left.shard.index - right.shard.index);
+    return Promise.all(
+      siblings.map(({ name }) =>
+        VscodeFileSource.create(vscode.Uri.joinPath(directory, name))
+      )
+    );
+  }
   if (!primary.name.toLowerCase().endsWith(".safetensors.index.json")) {
     return [primary];
   }
@@ -287,12 +321,47 @@ function errorMessage(error: unknown): string {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  const compareSelectionKey = "weightsViz.compareSelection";
   const provider = new WeightsEditorProvider(context);
   const createPanel = (title: string) =>
     vscode.window.createWebviewPanel("weightsViz.remote", title, vscode.ViewColumn.Active, {
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, "dist", "webview")]
     });
+  const openComparison = async (left: vscode.Uri, right: vscode.Uri) => {
+    if (left.toString() === right.toString()) {
+      throw new Error("Choose two different model files to compare.");
+    }
+    const panel = createPanel(`${fileName(left)} ↔ ${fileName(right)}`);
+    const sources = new Map<string, RandomAccessSource>();
+    const connection = connectPanel(
+      panel,
+      sources,
+      provider.parsers,
+      async () => {
+        const [leftSources, rightSources] = await Promise.all([
+          collectSources([left]),
+          collectSources([right])
+        ]);
+        [...leftSources, ...rightSources].forEach((source) =>
+          sources.set(source.id, source)
+        );
+        const [leftModels, rightModels] = await Promise.all([
+          loadSources(leftSources),
+          loadSources(rightSources)
+        ]);
+        return [...leftModels, ...rightModels];
+      },
+      true
+    );
+    panel.webview.html = webviewHtml(panel.webview, context.extensionUri);
+    await connection;
+  };
+  void vscode.commands.executeCommand(
+    "setContext",
+    "weightsViz.hasCompareSelection",
+    Boolean(context.workspaceState.get<string>(compareSelectionKey))
+  );
   context.subscriptions.push(
     vscode.window.registerCustomEditorProvider("weightsViz.viewer", provider, {
       webviewOptions: { retainContextWhenHidden: true }
@@ -323,6 +392,37 @@ export function activate(context: vscode.ExtensionContext): void {
         );
       }
     ),
+    vscode.commands.registerCommand(
+      "weightsViz.selectForCompare",
+      async (uri: vscode.Uri | undefined) => {
+        if (!uri) throw new Error("Select a model file in Explorer.");
+        await context.workspaceState.update(compareSelectionKey, uri.toString());
+        await vscode.commands.executeCommand(
+          "setContext",
+          "weightsViz.hasCompareSelection",
+          true
+        );
+        void vscode.window.showInformationMessage(
+          `Selected ${fileName(uri)}. Choose another model and run Compare with Selected Model.`
+        );
+      }
+    ),
+    vscode.commands.registerCommand(
+      "weightsViz.compareWithSelected",
+      async (uri: vscode.Uri | undefined) => {
+        if (!uri) throw new Error("Select a model file in Explorer.");
+        const selected = context.workspaceState.get<string>(compareSelectionKey);
+        if (!selected) throw new Error("Select the first model for comparison.");
+        await openComparison(vscode.Uri.parse(selected), uri);
+      }
+    ),
+    vscode.commands.registerCommand("weightsViz.compareFiles", async () => {
+      const left = await pickModelEntry("Select the left model");
+      if (!left) return;
+      const right = await pickModelEntry("Select the right model");
+      if (!right) return;
+      await openComparison(left, right);
+    }),
     vscode.commands.registerCommand("weightsViz.openUrl", async () => {
       const url = await vscode.window.showInputBox({
         title: "Open model URL",
@@ -348,6 +448,20 @@ export function activate(context: vscode.ExtensionContext): void {
       await connection;
     })
   );
+}
+
+async function pickModelEntry(title: string): Promise<vscode.Uri | undefined> {
+  const picked = await vscode.window.showOpenDialog({
+    canSelectMany: false,
+    canSelectFolders: false,
+    openLabel: "Select model",
+    title,
+    filters: {
+      "Model weights": ["gguf", "safetensors", "onnx", "json"],
+      "All files": ["*"]
+    }
+  });
+  return picked?.[0];
 }
 
 export function deactivate(): void {}

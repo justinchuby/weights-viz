@@ -23,6 +23,7 @@ function App() {
   const [models, setModels] = useState<ParsedModel[]>([]);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string>();
+  const [defaultCompare, setDefaultCompare] = useState(false);
   const [pendingSamples] = useState(
     () => new Map<string, { resolve: (sample: TensorSample) => void; reject: (error: Error) => void }>()
   );
@@ -35,9 +36,11 @@ function App() {
         error?: string;
         requestId?: string;
         sample?: TensorSample;
+        defaultCompare?: boolean;
       };
       if (message.type === "models") {
         setModels(message.models ?? []);
+        setDefaultCompare(Boolean(message.defaultCompare));
         setBusy(false);
       } else if (message.type === "error") {
         if (message.requestId) {
@@ -75,6 +78,7 @@ function App() {
       models={models}
       busy={busy}
       compact
+      defaultCompare={defaultCompare}
       {...(error ? { error } : {})}
       intro="Open a GGUF, SafeTensors, or ONNX file with the Weights Visualization editor, or choose files below. VS Code webviews cannot show the browser file dialog, so this button asks VS Code for its native picker."
       onChooseFiles={chooseFiles}

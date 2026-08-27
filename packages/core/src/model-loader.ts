@@ -13,6 +13,7 @@ import { SafeTensorsParser } from "./parsers/safetensors";
 import {
   REMOTE_ONNX_MAX_BYTES,
   SAFETENSORS_INDEX_MAX_BYTES,
+  type Diagnostic,
   type ParsedFile,
   type ParsedModel,
   type Parser,
@@ -29,6 +30,41 @@ const parsers = {
   gguf: new GgufParser(),
   onnx: new OnnxParser()
 } satisfies Record<string, Parser>;
+
+const REMOTE_SHARD_CONCURRENCY = 8;
+const MAX_GGUF_SHARDS = 1_024;
+
+export interface GgufShardIdentity {
+  prefix: string;
+  index: number;
+  total: number;
+  width: number;
+}
+
+export function parseGgufShardName(name: string): GgufShardIdentity | undefined {
+  const basename = name.split(/[\\/]/).pop() ?? name;
+  const match = /^(.*)-(\d+)-of-(\d+)\.gguf$/i.exec(basename);
+  if (!match) return undefined;
+  const [, prefix, indexText, totalText] = match;
+  if (!prefix || !indexText || !totalText) return undefined;
+  const index = Number(indexText);
+  const total = Number(totalText);
+  if (
+    !Number.isSafeInteger(index) ||
+    !Number.isSafeInteger(total) ||
+    index < 1 ||
+    total < 1 ||
+    index > total
+  ) {
+    return undefined;
+  }
+  return {
+    prefix,
+    index,
+    total,
+    width: Math.max(indexText.length, totalText.length)
+  };
+}
 
 export async function parseSource(
   source: RandomAccessSource,
@@ -57,6 +93,25 @@ export async function loadSources(
     models.push(model);
     consumed.add(index.id);
     for (const file of model.files) consumed.add(file.id);
+  }
+
+  const ggufFamilies = new Map<
+    string,
+    Array<{ source: RandomAccessSource; shard: GgufShardIdentity }>
+  >();
+  for (const source of sources) {
+    if (consumed.has(source.id)) continue;
+    const shard = parseGgufShardName(source.name);
+    if (!shard) continue;
+    const key = `${shard.prefix.toLocaleLowerCase()}\0${shard.total}`;
+    const family = ggufFamilies.get(key) ?? [];
+    family.push({ source, shard });
+    ggufFamilies.set(key, family);
+  }
+  for (const family of ggufFamilies.values()) {
+    const model = await loadGgufShardFamily(family, signal);
+    models.push(model);
+    family.forEach(({ source }) => consumed.add(source.id));
   }
 
   for (const source of sources) {
@@ -98,9 +153,122 @@ export async function loadModelUrl(
       await loadRemoteOnnx(url, signal, onSource)
     ];
   }
+  const ggufShard = parseGgufShardName(
+    decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "")
+  );
+  if (ggufShard) {
+    return [
+      await loadRemoteGgufShardFamily(url, ggufShard, signal, onSource)
+    ];
+  }
   const source = await HttpRangeSource.create(url, signal ? { signal } : {});
   onSource?.(source);
   return loadSources([source], signal);
+}
+
+async function loadGgufShardFamily(
+  family: Array<{ source: RandomAccessSource; shard: GgufShardIdentity }>,
+  signal?: AbortSignal
+): Promise<ParsedModel> {
+  const expectedTotal = family[0]!.shard.total;
+  const diagnostics: Diagnostic[] = [];
+  if (expectedTotal > MAX_GGUF_SHARDS) {
+    diagnostics.push({
+      severity: "error",
+      message: `GGUF shard count ${expectedTotal} exceeds the ${MAX_GGUF_SHARDS} shard limit`
+    });
+  }
+
+  const byIndex = new Map<number, typeof family>();
+  for (const entry of family) {
+    const entries = byIndex.get(entry.shard.index) ?? [];
+    entries.push(entry);
+    byIndex.set(entry.shard.index, entries);
+  }
+  for (const [index, entries] of byIndex) {
+    if (entries.length > 1) {
+      diagnostics.push({
+        severity: "error",
+        message: `Duplicate GGUF shard ${index} of ${expectedTotal}`
+      });
+    }
+  }
+  const missing: number[] = [];
+  if (expectedTotal <= MAX_GGUF_SHARDS) {
+    for (let index = 1; index <= expectedTotal; index += 1) {
+      if (!byIndex.has(index)) missing.push(index);
+    }
+  }
+  if (missing.length) {
+    diagnostics.push({
+      severity: "error",
+      message: `Missing GGUF shard${missing.length === 1 ? "" : "s"}: ${missing.join(", ")} of ${expectedTotal}`
+    });
+  }
+
+  const ordered = [...family].sort(
+    (left, right) =>
+      left.shard.index - right.shard.index ||
+      left.source.name.localeCompare(right.source.name)
+  );
+  const files: ParsedFile[] = [];
+  for (const { source } of ordered) {
+    const file = await parsers.gguf.parse(source, signal ? { signal } : {});
+    files.push(file);
+    diagnostics.push(...file.diagnostics);
+  }
+  const first = ordered[0]!;
+  return {
+    id: `model-${first.source.id}`,
+    name: first.shard.prefix,
+    files,
+    diagnostics
+  };
+}
+
+async function loadRemoteGgufShardFamily(
+  url: string,
+  shard: GgufShardIdentity,
+  signal?: AbortSignal,
+  onSource?: (source: RandomAccessSource) => void
+): Promise<ParsedModel> {
+  if (shard.total > MAX_GGUF_SHARDS) {
+    throw new ParseError(
+      `GGUF shard count ${shard.total} exceeds the ${MAX_GGUF_SHARDS} shard limit`
+    );
+  }
+  const sources: RandomAccessSource[] = [];
+  for (let start = 1; start <= shard.total; start += REMOTE_SHARD_CONCURRENCY) {
+    const indexes = Array.from(
+      { length: Math.min(REMOTE_SHARD_CONCURRENCY, shard.total - start + 1) },
+      (_, offset) => start + offset
+    );
+    const outcomes = await Promise.allSettled(
+      indexes.map(async (index) => {
+        const filename = `${shard.prefix}-${String(index).padStart(shard.width, "0")}-of-${String(shard.total).padStart(shard.width, "0")}.gguf`;
+        return HttpRangeSource.create(replaceUrlFilename(url, filename), signal ? { signal } : {});
+      })
+    );
+    for (const outcome of outcomes) {
+      if (outcome.status !== "fulfilled") continue;
+      sources.push(outcome.value);
+      onSource?.(outcome.value);
+    }
+  }
+  if (!sources.length) {
+    throw new ParseError("Unable to open any GGUF shards");
+  }
+  const models = await loadSources(sources, signal);
+  const model = models[0];
+  if (!model) throw new ParseError("Unable to parse GGUF shards");
+  return model;
+}
+
+function replaceUrlFilename(url: string, filename: string): string {
+  const result = new URL(url);
+  const slash = result.pathname.lastIndexOf("/");
+  result.pathname = `${result.pathname.slice(0, slash + 1)}${encodeURIComponent(filename)}`;
+  return result.toString();
 }
 
 async function loadRemoteOnnx(
@@ -212,10 +380,9 @@ async function loadRemoteSafeTensorsIndex(
   const index = parseSafeTensorsIndex(bytes);
   const shardNames = orderedShardNames(index.weight_map);
   const files: ParsedFile[] = [];
-  const concurrency = 8;
-  for (let index = 0; index < shardNames.length; index += concurrency) {
+  for (let index = 0; index < shardNames.length; index += REMOTE_SHARD_CONCURRENCY) {
     const outcomes = await Promise.allSettled(
-      shardNames.slice(index, index + concurrency).map(async (shardName) => {
+      shardNames.slice(index, index + REMOTE_SHARD_CONCURRENCY).map(async (shardName) => {
         const source = await HttpRangeSource.create(
           new URL(shardName, url).toString(),
           signal ? { signal } : {}

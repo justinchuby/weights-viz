@@ -15,8 +15,16 @@ Code.
 - Search file-level metadata, including GGUF model and tokenizer KV entries.
 - Sample values from SafeTensors and supported GGUF types on demand.
 - Open `*.safetensors.index.json` to combine model shards automatically.
+- Open any standard `model-00001-of-000NN.gguf` shard to discover and combine
+  its sibling shards automatically.
 - Visualize ONNX external-data address spaces inferred from the manifest without
   requiring the referenced `.data` files.
+- Compare any two GGUF, SafeTensors, or ONNX models side by side. Exact matching
+  tensor names are correlated; changed, added, and removed tensors are
+  highlighted directly in the maps.
+- Run **Weights Viz: Compare Model Weights...**, or select the first model from
+  Explorer with **Weights Viz: Select Model for Compare** and compare from the
+  second model's context menu.
 - Run **Weights Viz: Open Model Files** to pick model files with the native VS
   Code dialog, or use the **Open files** button inside the viewer.
 - Run **Weights Viz: Open Model URL** to inspect public remote models with HTTP

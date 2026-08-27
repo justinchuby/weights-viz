@@ -64,16 +64,19 @@ export function createAddressMapLayout(
   model: ParsedModel,
   width: number,
   includeTensor: (tensor: TensorRecord) => boolean = () => true,
-  resolutionStep = 0
+  resolutionStep = 0,
+  referenceFileSize?: bigint
 ): AddressMapLayout {
   const columns =
     width < 700 ? NARROW_ADDRESS_GRID_COLUMNS : ADDRESS_GRID_COLUMNS;
   const gridWidth = Math.max(columns, width - GUTTER_WIDTH - RIGHT_PADDING);
   const rowHeight = gridWidth / columns;
-  const largestFileSize = model.files.reduce(
-    (largest, file) => maxBigInt(largest, file.size),
-    0n
-  );
+  const largestFileSize =
+    referenceFileSize ??
+    model.files.reduce(
+      (largest, file) => maxBigInt(largest, file.size),
+      0n
+    );
   const bytesPerCell = scaleBytesPerCell(
     chooseBytesPerCell(largestFileSize, columns),
     resolutionStep

@@ -8,12 +8,18 @@ type WorkerRequest =
   | { type: "url"; url: string }
   | { type: "sample"; tensor: TensorRecord; maxValues: number };
 
+interface InstallPromptEvent extends Event {
+  prompt(): Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
 function App() {
   const [models, setModels] = useState<ParsedModel[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [workerReady, setWorkerReady] = useState(false);
-  const [sharedUrl] = useState(modelUrlFromQuery);
+  const [sharedUrls] = useState(modelUrlsFromQuery);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent>();
   const workerRef = useRef<Worker | null>(null);
   const sharedUrlHandled = useRef(false);
   const nextId = useRef(1);
@@ -68,14 +74,20 @@ function App() {
     }
   };
 
-  const loadUrl = async (url: string) => {
+  const loadUrls = async (urls: string[]) => {
+    if (!urls.length) return;
     setBusy(true);
     setError(undefined);
     try {
-      const loaded = await request<ParsedModel[]>({ type: "url", url });
-      setModels((current) => [...current, ...loaded]);
+      const loaded = await Promise.all(
+        urls.map((url) => request<ParsedModel[]>({ type: "url", url }))
+      );
+      setModels((current) => [...current, ...loaded.flat()]);
       const pageUrl = new URL(window.location.href);
-      pageUrl.searchParams.set("url", url);
+      const existing = new Set(pageUrl.searchParams.getAll("url"));
+      for (const url of urls) {
+        if (!existing.has(url)) pageUrl.searchParams.append("url", url);
+      }
       window.history.replaceState(null, "", pageUrl);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -85,10 +97,29 @@ function App() {
   };
 
   useEffect(() => {
-    if (!workerReady || !sharedUrl || sharedUrlHandled.current) return;
+    if (!workerReady || !sharedUrls.length || sharedUrlHandled.current) return;
     sharedUrlHandled.current = true;
-    void loadUrl(sharedUrl);
-  }, [workerReady, sharedUrl]);
+    setBusy(true);
+    setError(undefined);
+    void Promise.all(
+      sharedUrls.map((url) => request<ParsedModel[]>({ type: "url", url }))
+    )
+      .then((loaded) => setModels(loaded.flat()))
+      .catch((reason) =>
+        setError(reason instanceof Error ? reason.message : String(reason))
+      )
+      .finally(() => setBusy(false));
+  }, [sharedUrls, workerReady]);
+
+  useEffect(() => {
+    const captureInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+    };
+    window.addEventListener("beforeinstallprompt", captureInstallPrompt);
+    return () =>
+      window.removeEventListener("beforeinstallprompt", captureInstallPrompt);
+  }, []);
 
   useEffect(() => {
     const prevent = (event: DragEvent) => event.preventDefault();
@@ -118,9 +149,24 @@ function App() {
         models={models}
         busy={busy}
         {...(error ? { error } : {})}
-        {...(sharedUrl ? { defaultUrl: sharedUrl } : {})}
+        {...(sharedUrls.length ? { defaultUrl: sharedUrls.join("\n") } : {})}
+        defaultCompare={sharedUrls.length > 1}
+        installAvailable={Boolean(installPrompt)}
+        onInstall={() => {
+          if (!installPrompt) return;
+          void installPrompt.prompt().then(() => installPrompt.userChoice).then(() => {
+            setInstallPrompt(undefined);
+          });
+        }}
         onFilesSelected={(files) => void loadFiles(files)}
-        onOpenUrl={(url) => void loadUrl(url)}
+        onOpenUrl={(input) =>
+          void loadUrls(
+            input
+              .split(/\s+/)
+              .map((value) => value.trim())
+              .filter(Boolean)
+          )
+        }
         onSample={(tensor) =>
           request<TensorSample>({ type: "sample", tensor, maxValues: 256 })
         }
@@ -129,9 +175,26 @@ function App() {
   );
 }
 
-function modelUrlFromQuery(): string | undefined {
-  const value = new URLSearchParams(window.location.search).get("url")?.trim();
-  return value ? new URL(value, window.location.href).toString() : undefined;
+function modelUrlsFromQuery(): string[] {
+  const params = new URLSearchParams(window.location.search);
+  const values = [
+    ...params.getAll("url"),
+    ...(params.get("compare") ? [params.get("compare")!] : [])
+  ];
+  return [
+    ...new Set(
+      values
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => new URL(value, window.location.href).toString())
+    )
+  ];
+}
+
+if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("./sw.js");
+  });
 }
 
 createRoot(document.getElementById("root")!).render(
