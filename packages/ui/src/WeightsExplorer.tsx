@@ -715,6 +715,10 @@ function ComparisonWorkspace({
           {comparison.summary.unchanged.toLocaleString()} unchanged
         </span>
       </div>
+      <div className="wv-comparison-disclaimer" role="note">
+        Structure diff only — tensor metadata and encoded layout are compared.
+        Weight values and raw file bytes are not compared.
+      </div>
       <div className="wv-comparison-grid">
         <ComparisonPaneHeader side="LEFT" model={left} />
         <ComparisonPaneHeader side="RIGHT" model={right} />
@@ -733,6 +737,9 @@ function ComparisonWorkspace({
           referenceFileSize={referenceFileSize}
           resolutionStep={resolutionStep}
           onResolutionStepChange={setResolutionStep}
+          {...(selectedPair && !selectedPair.left
+            ? { emptyState: "No exact-name counterpart on the left" }
+            : {})}
           onSelect={(tensor) => selectTensor("left", tensor)}
         />
         <WeightMap
@@ -750,6 +757,9 @@ function ComparisonWorkspace({
           referenceFileSize={referenceFileSize}
           resolutionStep={resolutionStep}
           onResolutionStepChange={setResolutionStep}
+          {...(selectedPair && !selectedPair.right
+            ? { emptyState: "No exact-name counterpart on the right" }
+            : {})}
           onSelect={(tensor) => selectTensor("right", tensor)}
         />
         <ComparisonTensorDetail
@@ -908,6 +918,7 @@ function WeightMap({
   referenceFileSize,
   resolutionStep: controlledResolutionStep,
   onResolutionStepChange,
+  emptyState,
   onSelect
 }: {
   model: ParsedModel;
@@ -919,6 +930,7 @@ function WeightMap({
   referenceFileSize?: bigint;
   resolutionStep?: number;
   onResolutionStepChange?: (step: number) => void;
+  emptyState?: string;
   onSelect: (tensor: TensorRecord) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1169,6 +1181,12 @@ function WeightMap({
           if (!dragRef.current) setHover(undefined);
         }}
       />
+      {emptyState && (
+        <div className="wv-map-empty-counterpart" role="status">
+          <span>∅</span>
+          {emptyState}
+        </div>
+      )}
       <AddressRulerOverlay
         layout={layout}
         zoom={zoom}

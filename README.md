@@ -60,6 +60,9 @@ together. The comparison reports dtype, shape, parameter-count, encoded-size,
 and storage changes; tensors with different names remain left-only or
 right-only rather than being guessed.
 
+This is a structural metadata and encoded-layout diff. It does not compare
+tensor values or raw model-file bytes.
+
 Unchanged tensors are subdued, changed tensors receive an amber outline,
 additions use green `+` marks, and removals use red `−` marks. The maps keep independent
 physical file address spaces and scrolling because offsets across formats or

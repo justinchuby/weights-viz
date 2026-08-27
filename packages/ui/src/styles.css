@@ -189,12 +189,15 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-diff-summary button b { color: inherit; font: 600 12px ui-monospace, monospace; }
 .wv-diff-summary button span, .wv-unchanged-count { font: 9px ui-monospace, monospace; text-transform: uppercase; }
 .wv-unchanged-count { margin-left: auto; align-self: center; color: var(--wv-faint); }
+.wv-comparison-disclaimer { min-height: 30px; display: grid; place-items: center; padding: 5px 12px; color: var(--wv-warning-text); background: var(--wv-warning-bg); border-bottom: 1px solid var(--wv-warning-border); font: 10px/1.4 ui-monospace, monospace; text-align: center; }
 .wv-comparison-grid { min-width: 620px; min-height: 0; flex: 1; display: grid; grid-template-columns: repeat(2, minmax(300px, 1fr)); grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; background: var(--wv-border); gap: 1px; }
 .wv-comparison-pane-head { min-width: 0; padding: 8px 12px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 2px 8px; background: var(--wv-surface); }
 .wv-comparison-pane-head > span { color: var(--wv-accent); font: 700 9px ui-monospace, monospace; letter-spacing: .12em; }
 .wv-comparison-pane-head > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .wv-comparison-pane-head > small { grid-column: 2; color: var(--wv-muted); font: 9px ui-monospace, monospace; }
 .wv-comparison-grid > .wv-canvas-wrap { min-height: 0; background: var(--wv-map-bg); }
+.wv-map-empty-counterpart { position: absolute; z-index: 6; inset: 0; display: grid; place-content: center; gap: 8px; color: var(--wv-muted); background: color-mix(in srgb, var(--wv-map-bg) 94%, transparent); text-align: center; font: 11px ui-monospace, monospace; pointer-events: none; }
+.wv-map-empty-counterpart span { color: var(--wv-faint); font-size: 28px; }
 .wv-comparison-detail { min-height: 88px; padding: 9px 12px; display: grid; align-content: center; gap: 4px; overflow: hidden; background: var(--wv-surface); border-top: 2px solid transparent; }
 .wv-comparison-detail.changed, .wv-comparison-detail.ambiguous { border-top-color: var(--wv-diff-changed); }
 .wv-comparison-detail.left-only { border-top-color: var(--wv-diff-removed); }
@@ -254,4 +257,5 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
   .wv-comparison-toolbar { min-width: 620px; flex-wrap: wrap; }
   .wv-comparison-toolbar .wv-tensor-search { width: 100%; order: 3; }
   .wv-diff-summary { min-width: 620px; }
+  .wv-comparison-disclaimer { min-width: 620px; }
 }

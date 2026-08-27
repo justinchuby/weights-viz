@@ -21,7 +21,8 @@ Code.
   requiring the referenced `.data` files.
 - Compare any two GGUF, SafeTensors, or ONNX models side by side. Exact matching
   tensor names are correlated; changed, added, and removed tensors are
-  highlighted directly in the maps.
+  highlighted directly in the maps. This compares tensor metadata and encoded
+  layout, not tensor values or raw file bytes.
 - Run **Weights Viz: Compare Model Weights...**, or select the first model from
   Explorer with **Weights Viz: Select Model for Compare** and compare from the
   second model's context menu.
