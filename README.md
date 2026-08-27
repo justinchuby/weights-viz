@@ -60,6 +60,8 @@ together. The comparison reports dtype, shape, parameter-count, encoded-size,
 and storage changes; tensors with different names remain left-only or
 right-only rather than being guessed.
 
+![Weights Viz comparing two SafeTensors models](docs/weights-viz-compare.gif)
+
 This is a structural metadata and encoded-layout diff. It does not compare
 tensor values or raw model-file bytes.
 
