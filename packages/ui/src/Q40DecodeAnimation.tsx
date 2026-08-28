@@ -1,14 +1,27 @@
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
-  ChevronLeft,
   ChevronRight,
-  Pause,
-  Play,
-  RotateCcw,
   Sparkles
 } from "lucide-react";
+import {
+  AnimationControls,
+  AnimationStepCopy,
+  useAnimationPlayer
+} from "./DtypeAnimationPlayer";
 
 const SCALE = 0.25;
+
+export const Q40_BLOCK_LAYOUT = {
+  values: 32,
+  bytes: 18,
+  scaleCount: 1,
+  scaleType: "FP16",
+  scaleBytes: 2,
+  packedBytes: 16,
+  bias: 8,
+  qMin: -8,
+  qMax: 7
+} as const;
 
 const SOURCE_PAIRS = [
   { lowIndex: 0, highIndex: 16, low: -2, high: 0.31 },
@@ -50,20 +63,20 @@ export const Q40_DEMO_PAIRS: Q40DemoPair[] = SOURCE_PAIRS.map((pair) => {
 
 const STEPS = [
   {
-    label: "Source block",
-    detail: "Start with 32 floating-point weights. Eight representative lanes are shown."
+    label: "Choose the one block scale",
+    detail: "The reference quantizer finds the signed max-absolute weight and stores d = signedMaxAbs / −8 as FP16."
   },
   {
-    label: "Quantize",
-    detail: "Divide by the shared scale, round, and clamp each result to −8…7."
+    label: "Create signed q codes",
+    detail: "Every one of the 32 weights divides by the same d, rounds, and clamps to q ∈ [−8, 7]."
   },
   {
-    label: "Pack nibbles",
+    label: "Apply the implicit bias and pack",
     detail: "Add 8, then pair q[i] with q[i+16] in the low and high nibbles."
   },
   {
     label: "Decode",
-    detail: "Subtract 8 and multiply by the shared scale. The small gap is quantization error."
+    detail: "Read a nibble n, recover q = n − 8, then reconstruct w′ = d × q. The gap is quantization error."
   },
   {
     label: "Fused dot product",
@@ -76,22 +89,8 @@ export function quantizeQ40(value: number, scale: number): number {
 }
 
 export function Q40DecodeAnimation() {
-  const [step, setStep] = useState(0);
-  const [playing, setPlaying] = useState(() => !prefersReducedMotion());
-  const activeStep = STEPS[step] ?? STEPS[0];
-
-  useEffect(() => {
-    if (!playing) return;
-    const timer = window.setTimeout(() => {
-      setStep((current) => (current + 1) % STEPS.length);
-    }, step === STEPS.length - 1 ? 3000 : 2200);
-    return () => window.clearTimeout(timer);
-  }, [playing, step]);
-
-  const selectStep = (nextStep: number) => {
-    setStep(nextStep);
-    setPlaying(false);
-  };
+  const player = useAnimationPlayer(STEPS.length);
+  const { step } = player;
 
   return (
     <section className="wv-q4-demo" aria-labelledby="wv-q4-demo-title">
@@ -103,8 +102,9 @@ export function Q40DecodeAnimation() {
             Watch a Q4_0 block become math
           </h3>
           <p>
-            A faithful miniature of GGML packing. A real block stores one FP16
-            scale and 32 four-bit codes in 18 bytes.
+            A faithful miniature of GGML packing. A real block stores one{" "}
+            {Q40_BLOCK_LAYOUT.scaleType} scale and {Q40_BLOCK_LAYOUT.values}{" "}
+            four-bit codes in {Q40_BLOCK_LAYOUT.bytes} bytes.
           </p>
         </div>
         <div className="wv-q4-scale">
@@ -114,16 +114,22 @@ export function Q40DecodeAnimation() {
       </header>
 
       <div className="wv-q4-player">
-        <div className="wv-q4-step-copy" aria-live="polite">
-          <span>{step + 1} / {STEPS.length}</span>
-          <div>
-            <strong>{activeStep.label}</strong>
-            <p>{activeStep.detail}</p>
-          </div>
+        <AnimationStepCopy
+          step={step}
+          steps={STEPS}
+          announce={!player.playing}
+        />
+
+        <div className={`wv-q4-scale-rule${step === 0 ? " active" : ""}`}>
+          <code>d = signedMaxAbs(block) / −8</code>
+          <span>
+            Here the largest magnitude is <strong>−2.00</strong>, so the stored
+            FP16 scale is <strong>d = 0.25</strong>. One d serves all 32 weights.
+          </span>
         </div>
 
         <div className="wv-q4-flow" data-step={step}>
-          <FlowStage title="F32 source" subtitle="sampled block lanes" active={step === 0}>
+          <FlowStage title="F32 source" subtitle="8 of 32 lanes shown" active={step === 0}>
             {Q40_DEMO_PAIRS.map((pair) => (
               <PairCell
                 key={pair.lowIndex}
@@ -137,7 +143,7 @@ export function Q40DecodeAnimation() {
 
           <FlowArrow active={step >= 1} label="÷ d · round" />
 
-          <FlowStage title="Signed codes" subtitle="q ∈ [−8, 7]" revealed={step >= 1} active={step === 1}>
+          <FlowStage title="Signed codes" subtitle="q ∈ [−8, 7] · not stored yet" revealed={step >= 1} active={step === 1}>
             {Q40_DEMO_PAIRS.map((pair) => (
               <PairCell
                 key={pair.lowIndex}
@@ -149,9 +155,9 @@ export function Q40DecodeAnimation() {
             ))}
           </FlowStage>
 
-          <FlowArrow active={step >= 2} label="+ 8 · pack" />
+          <FlowArrow active={step >= 2} label="n = q + 8" />
 
-          <FlowStage title="Packed bytes" subtitle="high 4b · low 4b" revealed={step >= 2} active={step === 2}>
+          <FlowStage title="Packed bytes" subtitle="high n[i+16] · low n[i]" revealed={step >= 2} active={step === 2}>
             {Q40_DEMO_PAIRS.map((pair) => (
               <div className="wv-q4-byte" key={pair.lowIndex}>
                 <span>{pair.highNibble.toString(2).padStart(4, "0")}</span>
@@ -161,9 +167,9 @@ export function Q40DecodeAnimation() {
             ))}
           </FlowStage>
 
-          <FlowArrow active={step >= 3} label="unpack · × d" />
+          <FlowArrow active={step >= 3} label="q = n−8 · × d" />
 
-          <FlowStage title="Approximate F32" subtitle="decoded value · error" revealed={step >= 3} active={step === 3}>
+          <FlowStage title="Approximate F32" subtitle="w′ = d × q · error" revealed={step >= 3} active={step === 3}>
             {Q40_DEMO_PAIRS.map((pair) => (
               <PairCell
                 key={pair.lowIndex}
@@ -196,54 +202,16 @@ export function Q40DecodeAnimation() {
         </div>
       </div>
 
-      <footer className="wv-q4-controls">
-        <button
-          type="button"
-          aria-label="Previous animation step"
-          onClick={() => selectStep((step - 1 + STEPS.length) % STEPS.length)}
-        >
-          <ChevronLeft aria-hidden="true" />
-        </button>
-        <button
-          className="wv-q4-play"
-          type="button"
-          aria-label={playing ? "Pause animation" : "Play animation"}
-          aria-pressed={playing}
-          onClick={() => setPlaying((current) => !current)}
-        >
-          {playing ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
-          {playing ? "Pause" : "Play"}
-        </button>
-        <div className="wv-q4-timeline" aria-label="Animation steps">
-          {STEPS.map((item, index) => (
-            <button
-              type="button"
-              className={index === step ? "active" : ""}
-              aria-label={`Step ${index + 1}: ${item.label}`}
-              aria-current={index === step ? "step" : undefined}
-              key={item.label}
-              onClick={() => selectStep(index)}
-            />
-          ))}
-        </div>
-        <button
-          type="button"
-          aria-label="Next animation step"
-          onClick={() => selectStep((step + 1) % STEPS.length)}
-        >
-          <ChevronRight aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          aria-label="Restart animation"
-          onClick={() => {
-            setStep(0);
-            setPlaying(!prefersReducedMotion());
-          }}
-        >
-          <RotateCcw aria-hidden="true" />
-        </button>
-      </footer>
+      <AnimationControls
+        steps={STEPS}
+        step={step}
+        playing={player.playing}
+        onPrevious={player.previous}
+        onNext={player.next}
+        onSelect={player.selectStep}
+        onToggle={player.togglePlaying}
+        onRestart={player.restart}
+      />
     </section>
   );
 }
@@ -317,11 +285,4 @@ function formatSigned(value: number): string {
 function formatError(source: number, decoded: number): string {
   const error = decoded - source;
   return `(${error >= 0 ? "+" : ""}${error.toFixed(2)})`;
-}
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
 }

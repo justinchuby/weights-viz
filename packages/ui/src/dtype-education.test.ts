@@ -20,7 +20,7 @@ describe("dtype education", () => {
       bytes: 18,
       effectiveBitsPerValue: 4.5
     });
-    expect(lesson.formula?.expression).toContain("scale");
+    expect(lesson.formula?.expression).toContain("d × q");
     expect(lesson.tensorBitsPerValue).toBe(4.5);
     expect(lesson.packing).toEqual({
       values: 2,
@@ -41,6 +41,29 @@ describe("dtype education", () => {
 
     expect(lesson.block?.effectiveBitsPerValue).toBe(5.5);
     expect(lesson.packing).toBeUndefined();
+    expect(lesson.formula?.expression).toContain("storedCode − 16");
+  });
+
+  it("distinguishes the recent binary and two-bit block algorithms", () => {
+    const q1 = createDtypeEducation(
+      "gguf",
+      makeTensor("Q1_0", 128n, 18n, {
+        blockBytes: 18,
+        blockElements: 128
+      })
+    );
+    const q2 = createDtypeEducation(
+      "gguf",
+      makeTensor("Q2_0", 64n, 18n, {
+        blockBytes: 18,
+        blockElements: 64
+      })
+    );
+
+    expect(q1.formula?.expression).toContain("signBit");
+    expect(q1.formula?.explanation).toContain("mean(|weight|)");
+    expect(q2.formula?.expression).toContain("twoBitCode − 1");
+    expect(q2.formula?.explanation).toContain("+1 storage bias");
   });
 
   it("distinguishes affine and symmetric K-quant decode formulas", () => {
@@ -59,8 +82,8 @@ describe("dtype education", () => {
       })
     );
 
-    expect(affine.formula?.expression).toContain("minimum");
-    expect(symmetric.formula?.expression).not.toContain("minimum");
+    expect(affine.formula?.expression).toContain("globalMin × subMin");
+    expect(symmetric.formula?.expression).not.toContain("subMin");
   });
 
   it("describes Q8 companion metadata without treating sums as offsets", () => {

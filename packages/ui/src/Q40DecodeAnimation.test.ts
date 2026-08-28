@@ -1,7 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { Q40_DEMO_PAIRS, quantizeQ40 } from "./Q40DecodeAnimation";
+import {
+  Q40_BLOCK_LAYOUT,
+  Q40_DEMO_PAIRS,
+  quantizeQ40
+} from "./Q40DecodeAnimation";
 
 describe("Q4_0 animation data", () => {
+  it("describes the fixed GGML block contract", () => {
+    expect(Q40_BLOCK_LAYOUT).toEqual({
+      values: 32,
+      bytes: 18,
+      scaleCount: 1,
+      scaleType: "FP16",
+      scaleBytes: 2,
+      packedBytes: 16,
+      bias: 8,
+      qMin: -8,
+      qMax: 7
+    });
+    expect(
+      Q40_BLOCK_LAYOUT.scaleBytes + Q40_BLOCK_LAYOUT.packedBytes
+    ).toBe(Q40_BLOCK_LAYOUT.bytes);
+  });
+
   it("rounds and clamps signed four-bit codes", () => {
     expect(quantizeQ40(-3, 0.25)).toBe(-8);
     expect(quantizeQ40(-0.57, 0.25)).toBe(-2);

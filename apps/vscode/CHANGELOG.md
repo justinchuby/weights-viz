@@ -2,8 +2,15 @@
 
 ## Unreleased
 
-- Add a playable Q4_0 decode lesson showing block scaling, signed quantization,
-  GGML nibble packing, reconstruction error, and fused dot-product execution.
+- Add playable encoding stories for every catalog dtype family, including
+  floating-point fields, sub-byte packing, codebooks, ternary weights,
+  microscaling, companion blocks, and schema-only types.
+- Expand Q4_0 with its exact 18-byte block contract, FP16 scale derivation,
+  implicit bias, signed codes, nibble pairing, reconstruction error, and fused
+  dot-product execution.
+- Add byte-accurate super-block animations for Q2_K through Q6_K, including
+  fixed sub-block geometry, compressed local scales/minima, code bit-planes,
+  physical field order, parameter derivation, and reconstruction formulas.
 
 ## 0.3.0
 

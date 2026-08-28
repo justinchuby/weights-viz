@@ -20,6 +20,16 @@ import {
 } from "./dtype-education";
 import { formatBytes, formatParameterCount } from "./format";
 import { Q40DecodeAnimation } from "./Q40DecodeAnimation";
+import {
+  DtypeEncodingAnimation,
+  dtypeAnimationKind
+} from "./DtypeEncodingAnimation";
+import {
+  isKQuantDtype,
+  K_QUANT_LAYOUTS,
+  KQuantAnimation
+} from "./KQuantAnimation";
+import { ggufStorageLayout } from "./gguf-storage-layouts";
 
 interface DtypeExplorerProps {
   format: WeightFormat;
@@ -47,6 +57,8 @@ export function DtypeExplorer({
       ? document.activeElement
       : null
   );
+  const animationKind = dtypeAnimationKind(format, lesson.dtype);
+  const hasGgufBlockContract = format === "gguf" && lesson.block !== undefined;
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -146,7 +158,7 @@ export function DtypeExplorer({
           )}
 
           <div className="wv-dtype-grid">
-            {lesson.segments.length > 0 && (
+            {lesson.segments.length > 0 && !hasGgufBlockContract && (
               <LessonCard
                 icon={<Binary aria-hidden="true" />}
                 title={`${lesson.bitsPerValue ?? "Variable"}-bit value`}
@@ -156,7 +168,7 @@ export function DtypeExplorer({
               </LessonCard>
             )}
 
-            {lesson.packing && (
+            {lesson.packing && !hasGgufBlockContract && (
               <LessonCard
                 icon={<Boxes aria-hidden="true" />}
                 title="Packing"
@@ -173,7 +185,7 @@ export function DtypeExplorer({
             {lesson.block && (
               <LessonCard
                 icon={<Boxes aria-hidden="true" />}
-                title="Quantization block"
+                title="Storage contract"
                 subtitle={`${lesson.block.elements} weights · ${
                   lesson.block.bytes
                 } bytes · ${formatDecimal(
@@ -181,7 +193,7 @@ export function DtypeExplorer({
                 )} bpw`}
                 wide
               >
-                <BlockDiagram block={lesson.block} />
+                <BlockDiagram block={lesson.block} dtype={lesson.dtype} />
               </LessonCard>
             )}
 
@@ -214,8 +226,12 @@ export function DtypeExplorer({
             ))}
           </div>
 
-          {format === "gguf" && lesson.dtype === "Q4_0" && (
+          {animationKind === "q4" ? (
             <Q40DecodeAnimation />
+          ) : animationKind === "k-quant" && isKQuantDtype(lesson.dtype) ? (
+            <KQuantAnimation dtype={lesson.dtype} />
+          ) : (
+            <DtypeEncodingAnimation format={format} lesson={lesson} />
           )}
 
           {lesson.quantization && (
@@ -363,7 +379,17 @@ function PackingDiagram({ packing }: { packing: PackingGroup }) {
   );
 }
 
-function BlockDiagram({ block }: { block: BlockEncoding }) {
+function BlockDiagram({
+  block,
+  dtype
+}: {
+  block: BlockEncoding;
+  dtype: string;
+}) {
+  const fields = ggufStorageLayout(dtype);
+  const kSections = isKQuantDtype(dtype)
+    ? K_QUANT_LAYOUTS[dtype].sections
+    : undefined;
   return (
     <div className="wv-block-diagram">
       <div>
@@ -379,9 +405,34 @@ function BlockDiagram({ block }: { block: BlockEncoding }) {
         ))}
       </div>
       <p>
-        One block decodes into <strong>{block.elements} weights</strong>. The
-        metadata cost is shared by the whole group.
+        The dtype ABI fixes one block at <strong>{block.elements} weights</strong>;
+        a file cannot choose another block size. Metadata is shared by that group.
       </p>
+      {(fields || kSections) && (
+        <ul className="wv-block-fields">
+          {fields
+            ? fields.map((field) => (
+                <li key={field.name}>
+                  <code>{field.name}</code>
+                  <span>{field.type} × {field.count} · {field.bytes} B</span>
+                  <small>{field.role}</small>
+                </li>
+              ))
+            : kSections?.map((section) => (
+                <li key={section.label}>
+                  <code>{section.label}</code>
+                  <span>{section.bytes} B</span>
+                  <small>
+                    {section.tone === "global"
+                      ? "shared by all 256 weights"
+                      : section.tone === "local"
+                        ? "compact parameters for each sub-block"
+                        : "packed low-bit weight codes"}
+                  </small>
+                </li>
+              ))}
+        </ul>
+      )}
     </div>
   );
 }

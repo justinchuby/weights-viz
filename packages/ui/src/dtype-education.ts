@@ -457,6 +457,11 @@ function createBlockEncoding(
 }
 
 function blockMetadataLabel(dtype: string): string {
+  if (dtype === "Q4_0") return "d: one FP16 scale";
+  if (dtype === "Q5_0") return "d FP16 + qh high-bit plane";
+  if (dtype === "Q8_0") return "d: one FP16 scale";
+  if (dtype === "Q1_0") return "d: FP16 mean-absolute scale";
+  if (dtype === "Q2_0") return "d: one FP16 max-absolute scale";
   if (dtype === "Q8_1") return "F16 scale + scaled sum";
   if (dtype === "Q8_K") return "F32 scale + 16 group sums";
   if (dtype === "MXFP4") return "E8M0 shared scale";
@@ -493,6 +498,66 @@ function ggufBlockKind(dtype: string): {
   summary: string;
   formula: NonNullable<DtypeEducation["formula"]>;
 } {
+  if (dtype === "Q4_0") {
+    return {
+      family: "Symmetric block quantization",
+      summary:
+        "Q4_0 fixes each block at 32 weights, stores one FP16 scale d, and packs 32 biased four-bit nibbles into 16 bytes.",
+      formula: {
+        expression: "q = nibble − 8; weight ≈ d × q",
+        explanation:
+          "q is a conceptual signed integer from −8 through +7. The +8 storage bias is fixed by the format and is not stored as metadata."
+      }
+    };
+  }
+  if (dtype === "Q5_0") {
+    return {
+      family: "Symmetric block quantization",
+      summary:
+        "Q5_0 fixes each block at 32 weights, stores one FP16 scale, and splits each biased five-bit code between a four-byte qh plane and 16 low-nibble bytes.",
+      formula: {
+        expression: "q = storedCode − 16; weight ≈ d × q",
+        explanation:
+          "The conceptual q range is −16 through +15. The fixed +16 storage bias is implicit, while qh physically carries every code’s fifth bit."
+      }
+    };
+  }
+  if (dtype === "Q8_0") {
+    return {
+      family: "Symmetric block quantization",
+      summary:
+        "Q8_0 fixes each block at 32 weights, stores one FP16 scale d, and writes one signed int8 q code per weight.",
+      formula: {
+        expression: "weight ≈ d × signedInt8Q",
+        explanation:
+          "q is already stored as a signed int8, so Q8_0 has no implicit storage bias or split bit-plane."
+      }
+    };
+  }
+  if (dtype === "Q1_0") {
+    return {
+      family: "Binary block quantization",
+      summary:
+        "Q1_0 fixes each block at 128 weights, stores their mean absolute magnitude as one FP16 d, and records one sign bit per weight.",
+      formula: {
+        expression: "weight ≈ signBit ? +d : −d",
+        explanation:
+          "The code carries only sign. Unlike max-absolute quantizers, the reference scale is mean(|weight|) across all 128 values."
+      }
+    };
+  }
+  if (dtype === "Q2_0") {
+    return {
+      family: "Two-bit block quantization",
+      summary:
+        "Q2_0 fixes each block at 64 weights, stores one FP16 max-absolute scale d, and packs four two-bit codes into every byte.",
+      formula: {
+        expression: "q = twoBitCode − 1; weight ≈ d × q",
+        explanation:
+          "Stored codes 0, 1, 2, and 3 reconstruct the asymmetric levels −d, 0, +d, and +2d; the +1 storage bias is implicit."
+      }
+    };
+  }
   if (dtype === "IQ4_NL") {
     return {
       family: "Fixed nonlinear codebook quantization",
@@ -551,10 +616,10 @@ function ggufBlockKind(dtype: string): {
         }.`,
       formula: {
         expression: affine
-          ? "weight ≈ globalScale × subScale × q + minimum"
+          ? "weight ≈ (globalScale × subScale) × q − (globalMin × subMin)"
           : "weight ≈ globalScale × subScale × q",
         explanation:
-          "Hierarchical scales adapt to local ranges while sharing metadata across a larger block."
+          "Hierarchical parameters adapt to local ranges while sharing FP16 metadata across a larger block."
       }
     };
   }
