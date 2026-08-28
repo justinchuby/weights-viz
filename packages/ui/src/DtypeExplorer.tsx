@@ -19,6 +19,7 @@ import {
   type PackingGroup
 } from "./dtype-education";
 import { formatBytes, formatParameterCount } from "./format";
+import { Q40DecodeAnimation } from "./Q40DecodeAnimation";
 
 interface DtypeExplorerProps {
   format: WeightFormat;
@@ -212,6 +213,10 @@ export function DtypeExplorer({
               </article>
             ))}
           </div>
+
+          {format === "gguf" && lesson.dtype === "Q4_0" && (
+            <Q40DecodeAnimation />
+          )}
 
           {lesson.quantization && (
             <section className="wv-quant-guide">

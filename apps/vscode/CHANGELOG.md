@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add a playable Q4_0 decode lesson showing block scaling, signed quantization,
+  GGML nibble packing, reconstruction error, and fused dot-product execution.
+
 ## 0.3.0
 
 - Add a standalone Dtype Atlas covering all 92 recognized SafeTensors, GGUF,
