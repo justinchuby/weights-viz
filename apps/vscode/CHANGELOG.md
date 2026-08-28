@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.3.0
+
+- Add a standalone Dtype Atlas covering all 92 recognized SafeTensors, GGUF,
+  and ONNX format entries without requiring a model file.
+- Add interactive dtype lessons for bit fields, sub-byte packing, quantization
+  blocks, scales, offsets, effective bits per weight, and decode formulas.
+- Explain how GGUF quantization parameters are selected and how specialized
+  kernels fuse unpacking, dequantization, and dot products during inference.
+- Allow the Canvas to zoom down to 25% while keeping address labels legible.
+- Improve PWA icons for macOS masking and add a comparison walkthrough GIF.
 - Upgrade the build toolchain to Vite 8, TypeScript 7, Vitest 4, and pnpm 11,
   along with the latest React, VS Code, and extension packaging dependencies.
 
