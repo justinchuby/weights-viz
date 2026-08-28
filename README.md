@@ -162,7 +162,7 @@ pnpm package:vscode
 ```
 
 Pushes to `main` deploy the static app through GitHub Pages. Version tags such
-as `v0.3.0` create a GitHub release containing the VSIX, then dispatch the
+as `v0.4.0` create a GitHub release containing the VSIX, then dispatch the
 Marketplace publishing workflow. A GitHub release published manually triggers
 the same Marketplace workflow.
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0
+
 - Align the homepage actions and show streamed remote-download bytes, totals, and
   percentages, with a device-safe fallback when a server ignores Range requests.
 - Add playable encoding stories for every catalog dtype family, including
