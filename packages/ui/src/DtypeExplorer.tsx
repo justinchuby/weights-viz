@@ -15,6 +15,7 @@ import {
   createDtypeEducation,
   formatDecimal,
   type BlockEncoding,
+  type DtypeEducation,
   type EncodingSegment,
   type PackingGroup
 } from "./dtype-education";
@@ -27,8 +28,15 @@ import {
 import { GgufQuantContractAnimation } from "./GgufQuantContractAnimation";
 import {
   isKQuantDtype,
+  K_QUANT_LAYOUTS,
+  kQuantContractDetails,
+  kQuantFieldMeaning,
   KQuantAnimation
 } from "./KQuantAnimation";
+import {
+  ggufQuantContract,
+  type GgufQuantSymbol
+} from "./gguf-quant-contracts";
 import { ggufStorageLayout } from "./gguf-storage-layouts";
 
 interface DtypeExplorerProps {
@@ -193,11 +201,15 @@ export function DtypeExplorer({
                 )} bpw`}
                 wide
               >
-                <BlockDiagram block={lesson.block} dtype={lesson.dtype} />
+                <BlockDiagram
+                  block={lesson.block}
+                  dtype={lesson.dtype}
+                  formula={lesson.formula}
+                />
               </LessonCard>
             )}
 
-            {lesson.formula && (
+            {lesson.formula && !hasGgufBlockContract && (
               <LessonCard
                 icon={<Scale aria-hidden="true" />}
                 title="Decode one weight"
@@ -383,24 +395,91 @@ function PackingDiagram({ packing }: { packing: PackingGroup }) {
 
 function BlockDiagram({
   block,
-  dtype
+  dtype,
+  formula
 }: {
   block: BlockEncoding;
   dtype: string;
+  formula?: DtypeEducation["formula"];
 }) {
   const fields = ggufStorageLayout(dtype);
+  const exactContract = ggufQuantContract(dtype);
+  const kLayout = isKQuantDtype(dtype) ? K_QUANT_LAYOUTS[dtype] : undefined;
+  const kContract = isKQuantDtype(dtype) ? kQuantContractDetails(dtype) : undefined;
+  const fallback = dtype === "Q4_0" ? q40ContractDetails() : undefined;
+  const metadata = exactContract?.metadata ?? kContract?.metadata ?? fallback?.metadata;
+  const codes = exactContract?.codes ?? kContract?.codes ?? fallback?.codes;
+  const packing = exactContract?.packing ?? kContract?.packing ?? fallback?.packing;
+  const terms = exactContract?.symbols ?? kContract?.terms ?? fallback?.terms;
+  let byteOffset = 0;
+  const fieldOffsets = fields?.map((field) => {
+    const start = byteOffset;
+    byteOffset += field.bytes;
+    return { field, start, end: byteOffset - 1 };
+  });
+
   return (
     <div className="wv-block-diagram">
-      <div>
-        {fields
-          ? fields.map((field) => (
+      {fieldOffsets && (
+        <section className="wv-storage-vocabulary">
+          <header>
+            <strong>Field names</strong>
+            <small>what each physical part contains and where it applies</small>
+          </header>
+          <dl className="wv-storage-field-definitions">
+            {fieldOffsets.map(({ field, start, end }) => (
+              <div key={field.name}>
+                <dt>
+                  <code>{field.name}</code>
+                  <strong>{fieldNameMeaning(dtype, field.name)}</strong>
+                </dt>
+                <dd>
+                  <span>{field.type}[{field.count}] · {field.bytes} B · record bytes {start}…{end}</span>
+                  <span>Contents: {field.role}</span>
+                  <span>Scope: {fieldScope(dtype, field.name)}</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+      {terms && terms.length > 0 && (
+        <section className="wv-storage-vocabulary">
+          <header>
+            <strong>Terms used by the formula and animation</strong>
+            <small>symbol → meaning → source</small>
+          </header>
+          <dl className="wv-storage-term-definitions">
+            {terms.map((term, index) => (
+              <div key={`${term.symbol}-${index}`}>
+                <dt>
+                  <code>{term.symbol}</code>
+                  <strong>{term.meaning}</strong>
+                </dt>
+                <dd>{term.source}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+      <header className="wv-storage-layout-heading">
+        <strong>{kLayout ? "Physical super-block record" : "Physical block record"}</strong>
+        <small>
+          {kLayout
+            ? `1 record = 1 super-block = 256 weights = ${kLayout.bytes} bytes`
+            : "left-to-right ABI order; width is proportional to stored bytes"}
+        </small>
+      </header>
+      <div className="wv-storage-field-strip">
+        {fieldOffsets
+          ? fieldOffsets.map(({ field, start, end }) => (
               <span
                 className={storageFieldTone(field.name)}
                 key={field.name}
                 style={{ flexGrow: field.bytes }}
               >
                 {field.name}: {field.type}[{field.count}]
-                <small>{field.bytes} B</small>
+                <small>{field.bytes} B · bytes {start}…{end}</small>
               </span>
             ))
           : block.sections.map((section) => (
@@ -414,23 +493,145 @@ function BlockDiagram({
               </span>
             ))}
       </div>
-      <p>
-        The dtype ABI fixes one block at <strong>{block.elements} weights</strong>;
-        a file cannot choose another block size. Metadata is shared by that group.
-      </p>
-      {fields && (
-        <ul className="wv-block-fields">
-          {fields.map((field) => (
-            <li key={field.name}>
-              <code>{field.name}</code>
-              <span>{field.type} × {field.count} · {field.bytes} B</span>
-              <small>{field.role}</small>
-            </li>
-          ))}
-        </ul>
+      {kLayout ? (
+        <section className="wv-storage-subblocks">
+          <header>
+            <strong>Logical sub-blocks inside this super-block</strong>
+            <small>each sub-block selects its own local metadata and q codes from the fields above</small>
+          </header>
+          <div>
+            {Array.from({ length: kLayout.subBlocks }, (_, group) => {
+              const start = group * kLayout.valuesPerSubBlock;
+              const end = start + kLayout.valuesPerSubBlock - 1;
+              const localScale = dtype === "Q6_K" ? `signed_s[${group}]` : `s[${group}]`;
+              const localMetadata = kLayout.minBits
+                ? `${localScale}, m[${group}]`
+                : localScale;
+              return (
+                <span key={group}>
+                  <strong>sub-block {group}</strong>
+                  <small>weights {start}…{end}</small>
+                  <code>metadata: {localMetadata}</code>
+                  <code>codes: q[{start}…{end}]</code>
+                </span>
+              );
+            })}
+          </div>
+          <p>
+            These are logical ranges within the one record above, not separate
+            byte records. The exact packing rules below locate their metadata
+            and codes inside the shared arrays.
+          </p>
+        </section>
+      ) : (
+        <p>
+          The dtype ABI fixes one block at <strong>{block.elements} weights</strong>;
+          a file cannot choose another block size. Metadata is shared by that group.
+        </p>
+      )}
+      {metadata && codes && packing && (
+        <div className="wv-storage-rules">
+          <StorageRuleList title="Metadata meanings" items={metadata} />
+          <StorageRuleList title="Code meanings and ranges" items={codes} />
+          <StorageRuleList title="Exact byte / bit layout" items={packing} />
+        </div>
+      )}
+      {formula && (
+        <section className="wv-storage-reconstruction">
+          <header>
+            <strong>Reconstruction using the terms above</strong>
+          </header>
+          <code>{formula.expression}</code>
+          <p>{formula.explanation}</p>
+        </section>
       )}
     </div>
   );
+}
+
+function StorageRuleList({
+  title,
+  items
+}: {
+  title: string;
+  items: readonly string[];
+}) {
+  return (
+    <section>
+      <strong>{title}</strong>
+      <ol>
+        {items.map((item) => <li key={item}>{item}</li>)}
+      </ol>
+    </section>
+  );
+}
+
+function fieldNameMeaning(dtype: string, name: string): string {
+  if (isKQuantDtype(dtype)) return kQuantFieldMeaning(name);
+  if (name === "qs") return "packed quantized symbols / codes";
+  if (name === "qh") return "packed high bits of quantized codes";
+  if (name === "ql") return "packed low bits of quantized codes";
+  if (name === "hmask") return "high-bit mask for quantized codes";
+  if (name === "d") return dtype === "NVFP4" ? "local scale codes" : "scale or scale step";
+  if (name === "dmin") return "minimum-magnitude scale step";
+  if (name === "m") return "stored affine minimum";
+  if (name === "s") return "stored scaled code sum";
+  if (name === "scales") return "packed local scale metadata";
+  if (name === "scales_h") return "high bits of local scales";
+  if (name === "scales_l") return "low bits of local scales";
+  if (name === "signs") return "packed sign masks";
+  if (name === "bsums") return "precomputed sums of code groups";
+  if (name === "e") return "shared exponent / scale code";
+  return name;
+}
+
+function fieldScope(dtype: string, name: string): string {
+  if (["qs", "qh", "ql", "hmask", "signs"].includes(name)) {
+    return "individual weight codes, packed across the fixed block";
+  }
+  if (name === "bsums") return "one auxiliary sum per 16 codes";
+  if (name === "scales" || name === "scales_h" || name === "scales_l") {
+    return dtype.includes("_K") || dtype === "IQ4_XS" || dtype.startsWith("IQ")
+      ? "local groups inside the super-block"
+      : "the fixed block";
+  }
+  if (dtype === "NVFP4" && name === "d") return "one scale per 16 weights";
+  return "the complete fixed block / super-block";
+}
+
+function q40ContractDetails(): {
+  metadata: readonly string[];
+  codes: readonly string[];
+  packing: readonly string[];
+  terms: readonly GgufQuantSymbol[];
+} {
+  return {
+    metadata: [
+      "signedMaxAbs is the block element with the largest absolute magnitude, preserving its sign.",
+      "d = signedMaxAbs / −8, rounded once into the FP16 d field.",
+      "The same d applies to all 32 weights in the block."
+    ],
+    codes: [
+      "q is a conceptual signed integer from −8 through +7.",
+      "stored nibble = q + 8, so the physical four-bit code is 0…15.",
+      "A code is a discrete level ID, not a truncated floating-point weight."
+    ],
+    packing: [
+      "qs contains 16 bytes for 32 codes.",
+      "qs[j] bits 0…3 store weight j’s code.",
+      "qs[j] bits 4…7 store weight j+16’s code."
+    ],
+    terms: [
+      { symbol: "i", meaning: "weight index inside this block", source: "0…31 in source order" },
+      { symbol: "j", meaning: "packed-byte index", source: "0…15; qs[j] stores weights j and j+16" },
+      { symbol: "w[i]", meaning: "original source float at index i", source: "encoder input; not stored in the Q4_0 record" },
+      { symbol: "signedMaxAbs", meaning: "signed block extreme", source: "selected from the 32 source weights by greatest absolute magnitude" },
+      { symbol: "d", meaning: "shared FP16 scale", source: "physical record field d" },
+      { symbol: "nibble", meaning: "stored four-bit code 0…15", source: "low or high half of one qs byte" },
+      { symbol: "q", meaning: "signed integer level −8…7", source: "q = nibble − 8" },
+      { symbol: "w′", meaning: "reconstructed approximation", source: "w′ = d × q" }
+    ]
+  };
 }
 
 function storageFieldTone(name: string): "metadata" | "codes" {

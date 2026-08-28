@@ -633,7 +633,9 @@ function ggufBlockKind(dtype: string): {
       formula: {
         expression: affine
           ? "weight ≈ (globalScale × subScale) × q − (globalMin × subMin)"
-          : "weight ≈ globalScale × subScale × q",
+          : dtype === "Q3_K"
+            ? "weight ≈ globalScale × (subScale − 32) × q"
+            : "weight ≈ globalScale × subScale × q",
         explanation:
           "Hierarchical parameters adapt to local ranges while sharing FP16 metadata across a larger block."
       }

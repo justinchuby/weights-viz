@@ -81,9 +81,20 @@ describe("dtype education", () => {
         blockElements: 256
       })
     );
+    const signedScale = createDtypeEducation(
+      "gguf",
+      makeTensor("Q6_K", 256n, 210n, {
+        blockBytes: 210,
+        blockElements: 256
+      })
+    );
 
     expect(affine.formula?.expression).toContain("globalMin × subMin");
     expect(symmetric.formula?.expression).not.toContain("subMin");
+    expect(symmetric.formula?.expression).toContain("(subScale − 32)");
+    expect(signedScale.formula?.expression).toBe(
+      "weight ≈ globalScale × subScale × q"
+    );
   });
 
   it("describes Q8 companion metadata without treating sums as offsets", () => {

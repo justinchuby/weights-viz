@@ -18,6 +18,8 @@ import {
   isKQuantDtype,
   K_QUANT_LAYOUTS,
   kQuantCodeExample,
+  kQuantContractDetails,
+  kQuantFieldMeaning,
   kQuantMetadataBytes
 } from "./KQuantAnimation";
 import { ggufStorageLayout } from "./gguf-storage-layouts";
@@ -153,6 +155,32 @@ describe("K-quant animation layouts", () => {
       minBits: 6
     });
   });
+
+  it.each(Object.keys(K_QUANT_LAYOUTS) as Array<keyof typeof K_QUANT_LAYOUTS>)(
+    "%s defines fields, terms, code ranges, metadata, and bit layout before animation",
+    (dtype) => {
+      const details = kQuantContractDetails(dtype);
+      expect(details.metadata.length).toBeGreaterThanOrEqual(3);
+      expect(details.codes.length).toBeGreaterThanOrEqual(3);
+      expect(details.packing.length).toBeGreaterThanOrEqual(3);
+      expect(details.terms.map((term) => term.symbol)).toEqual(
+        expect.arrayContaining([
+          "super-block",
+          "g / sub-block",
+          "lane / l",
+          "w[i]",
+          "w′[i]",
+          "d / globalScale",
+          "q / code",
+          "activation",
+          "Σ"
+        ])
+      );
+      for (const field of K_QUANT_LAYOUTS[dtype].sections) {
+        expect(kQuantFieldMeaning(field.name)).not.toBe(field.name);
+      }
+    }
+  );
 
   it("maps selected sub-block metadata to exact scales bytes and bits", () => {
     expect(kQuantMetadataBytes("Q2_K", 0)).toEqual([
@@ -322,6 +350,7 @@ describe("GGUF physical animation layouts", () => {
     expect(symbols?.map((item) => item.symbol)).toEqual([
       "w′",
       "d",
+      "i",
       "group",
       "subgrid",
       "s",

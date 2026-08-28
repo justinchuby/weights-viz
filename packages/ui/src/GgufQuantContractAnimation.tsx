@@ -137,11 +137,6 @@ export function GgufQuantContractAnimation({ dtype }: { dtype: string }) {
                 </span>
               ))}
             </div>
-            <ol>
-              {contract.packing.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ol>
           </div>
 
           <div className={`wv-contract-decode${step === 4 ? " active" : ""}`}>
@@ -154,23 +149,6 @@ export function GgufQuantContractAnimation({ dtype }: { dtype: string }) {
             </div>
             <ChevronRight aria-hidden="true" />
             <p>{contract.runtime}</p>
-            <section className="wv-contract-symbols">
-              <header>
-                <strong>Every symbol, traced</strong>
-                <small>formula name → meaning → exact source</small>
-              </header>
-              <dl>
-                {contract.symbols.map((item, index) => (
-                  <div key={`${item.symbol}-${index}`}>
-                    <dt>
-                      <code>{item.symbol}</code>
-                      <span>{item.meaning}</span>
-                    </dt>
-                    <dd>{item.source}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
           </div>
         </div>
       </div>

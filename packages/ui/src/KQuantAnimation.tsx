@@ -53,6 +53,19 @@ export interface KQuantCodeExample {
   decode: string;
 }
 
+export interface KQuantTermDefinition {
+  symbol: string;
+  meaning: string;
+  source: string;
+}
+
+export interface KQuantContractDetails {
+  metadata: readonly string[];
+  codes: readonly string[];
+  packing: readonly string[];
+  terms: readonly KQuantTermDefinition[];
+}
+
 export const K_QUANT_LAYOUTS: Record<KQuantLayout["dtype"], KQuantLayout> = {
   Q2_K: {
     dtype: "Q2_K",
@@ -304,14 +317,6 @@ export function KQuantAnimation({ dtype }: { dtype: KQuantLayout["dtype"] }) {
                 </span>
               ))}
             </div>
-            <dl className="wv-kquant-field-glossary">
-              {layout.sections.map((section) => (
-                <div key={section.name}>
-                  <dt><code>{section.name}</code> = {fieldMeaning(section.name)}</dt>
-                  <dd>{section.role}</dd>
-                </div>
-              ))}
-            </dl>
           </div>
 
           <ChevronRight className="wv-kquant-down" aria-hidden="true" />
@@ -341,9 +346,8 @@ export function KQuantAnimation({ dtype }: { dtype: KQuantLayout["dtype"] }) {
               />
             </div>
             <p>
-              <code>q</code> is the small integer level chosen for one weight. The
-              record does not store the original float: it stores q inside the named
-              code fields above, then the kernel rebuilds w′ and immediately computes{" "}
+              Using the terms defined in the Storage contract above, the kernel
+              rebuilds <code>w′</code> and immediately computes{" "}
               <code>w′ × activation → Σ</code>.
             </p>
           </div>
@@ -352,7 +356,7 @@ export function KQuantAnimation({ dtype }: { dtype: KQuantLayout["dtype"] }) {
         <div className="wv-kquant-key">
           <span><i className="global" /> one value for all 256 weights</span>
           <span><i className="local" /> one compact value per sub-block</span>
-          <span><i className="codes" /> packed q codes: one discrete level ID per weight</span>
+          <span><i className="codes" /> packed q codes (defined in Storage contract)</span>
         </div>
       </div>
 
@@ -866,7 +870,76 @@ function kQuantFieldOffset(
     .reduce((offset, section) => offset + section.bytes, 0);
 }
 
-function fieldMeaning(name: string): string {
+export function kQuantContractDetails(
+  dtype: KQuantLayout["dtype"]
+): KQuantContractDetails {
+  const layout = K_QUANT_LAYOUTS[dtype];
+  const affine = layout.minBits !== undefined;
+  const qRange =
+    dtype === "Q2_K"
+      ? "0…3"
+      : dtype === "Q3_K"
+        ? "−4…3"
+        : dtype === "Q4_K"
+          ? "0…15"
+          : dtype === "Q5_K"
+            ? "0…31"
+            : "−32…31";
+  const metadata = affine
+    ? [
+        `d is the FP16 global step used to reconstruct every local scale in the 256-weight super-block.`,
+        `dmin is the FP16 global step used to reconstruct every local minimum magnitude.`,
+        `s[g] and m[g] are the ${layout.scaleBits}-bit local integers for sub-block g; localScale[g] = d × s[g], localMin[g] = dmin × m[g].`
+      ]
+    : dtype === "Q3_K"
+      ? [
+          "d is the FP16 global step shared by all 16 sub-blocks.",
+          "s[g] is a packed unsigned six-bit value 0…63; subtracting the fixed bias 32 gives the signed local-scale integer.",
+          "localScale[g] = d × (s[g] − 32); neither the decoded local scale nor the bias 32 occupies another field."
+        ]
+      : [
+          "d is the FP16 global step shared by all 16 sub-blocks.",
+          "signed_s[g] is one int8 value in scales[g], so its sign is physically stored rather than implied by a bias.",
+          "localScale[g] = d × signed_s[g]."
+        ];
+
+  return {
+    metadata,
+    codes: [
+      `A code q is the small integer level chosen for one source weight; ${layout.codeBits} bits allow the ${qRange} decode range used by ${dtype}.`,
+      "The original floating-point weight is not stored. Its q code plus the shared/local metadata reconstruct an approximation w′.",
+      codeStorageRule(dtype)
+    ],
+    packing: kQuantPackingRules(dtype),
+    terms: [
+      term("super-block", "the complete fixed record", `256 source weights encoded in ${layout.bytes} bytes`),
+      term("i", "weight index inside the super-block", "0…255 in source order"),
+      term("g / sub-block", "local group index", `${layout.subBlocks} groups numbered 0…${layout.subBlocks - 1}, each covering ${layout.valuesPerSubBlock} consecutive weights`),
+      term("lane / l", "position inside sub-block g", `0…${layout.valuesPerSubBlock - 1}; source index i = g×${layout.valuesPerSubBlock} + l`),
+      term("w[i]", "original source floating-point weight", "encoder input; it is not present in the stored record"),
+      term("w′[i]", "reconstructed approximation of w[i]", "decoder output produced from metadata and q"),
+      term("a[g]", "ideal local scale fitted to sub-block g", "temporary encoder result; quantized into s[g], not stored directly"),
+      ...(affine
+        ? [
+            term("b[g]", "ideal positive minimum magnitude for sub-block g", "temporary encoder result; quantized into m[g], not stored directly"),
+            term("dmin / globalMin", "global minimum step", "FP16 record field dmin"),
+            term("m[g] / subMin", "local minimum integer", `the ${layout.minBits}-bit m[g] packed in scales; reconstructed minimum is dmin×m[g]`)
+          ]
+        : []),
+      term("d / globalScale", "global scale step", "FP16 record field d"),
+      term(
+        dtype === "Q6_K" ? "signed_s[g] / subScale" : "s[g] / subScale",
+        "stored local-scale integer",
+        localScaleTermSource(dtype)
+      ),
+      term("q / code", `integer level ${qRange} for one weight`, codeTermSource(dtype)),
+      term("activation", "the matching runtime input value", "the other operand of the fused dot product; not stored in this weight record"),
+      term("Σ", "dot-product accumulator", "register sum of reconstructed weight × activation products")
+    ]
+  };
+}
+
+export function kQuantFieldMeaning(name: string): string {
   if (name === "qs") return "packed quantized symbols (the q codes)";
   if (name === "ql") return "packed low bits of each q code";
   if (name === "qh") return "packed high bits of each q code";
@@ -875,6 +948,85 @@ function fieldMeaning(name: string): string {
   if (name === "d") return "global scale step";
   if (name === "dmin") return "global minimum-magnitude step";
   return name;
+}
+
+function codeStorageRule(dtype: KQuantLayout["dtype"]): string {
+  if (dtype === "Q2_K") {
+    return "Each q uses one two-bit slice inside qs; four slices for separated weight groups share each qs byte.";
+  }
+  if (dtype === "Q3_K") {
+    return "Each signed q is rebuilt from two low bits in qs and one high/subtract-control bit in hmask.";
+  }
+  if (dtype === "Q4_K") {
+    return "Each q is one nibble in qs; two 32-weight sub-blocks use the low and high nibbles of the same 32-byte stripe.";
+  }
+  if (dtype === "Q5_K") {
+    return "Each q uses four low bits in qs plus its fifth bit in qh.";
+  }
+  return "Each signed q uses four low bits in ql plus two high bits in qh, then subtracts the fixed storage bias 32.";
+}
+
+function kQuantPackingRules(
+  dtype: KQuantLayout["dtype"]
+): readonly string[] {
+  if (dtype === "Q2_K") {
+    return [
+      "scales[g] bits 0…3 = s[g]; bits 4…7 = m[g].",
+      "For sub-block g and lane l: qs[floor(g/8)×32 + (g mod 2)×16 + l].",
+      "The q slice starts at bit 2×floor((g mod 8)/2); mask with 0b11."
+    ];
+  }
+  if (dtype === "Q3_K") {
+    return [
+      "scales[12] packs sixteen six-bit s[g] values; decoding subtracts the implicit bias 32.",
+      "qs uses the same interleaved two-bit location rule as Q2_K.",
+      "For source index i=16g+l: hmask[i mod 32] bit floor(i/32) completes q; clear means subtract 4, set means subtract 0."
+    ];
+  }
+  if (dtype === "Q4_K") {
+    return [
+      "scales[12] packs eight six-bit s[g] and eight six-bit m[g] values.",
+      "For sub-block g and lane l: byte = qs[32×floor(g/2)+l].",
+      "Even g uses that byte’s low nibble; odd g uses its high nibble."
+    ];
+  }
+  if (dtype === "Q5_K") {
+    return [
+      "scales[12] uses exactly the same s[g]/m[g] layout as Q4_K.",
+      "For sub-block g and lane l: the low four bits are the matching nibble in qs[32×floor(g/2)+l].",
+      "The fifth bit is qh[l] bit g; joining it above the qs nibble yields q 0…31."
+    ];
+  }
+  return [
+    "scales[g] is the signed int8 local-scale integer for consecutive 16-weight sub-block g.",
+    "Within each 128-weight half, ql low nibbles encode weights 0…63 and high nibbles encode 64…127.",
+    "Within that half, qh bits 0…1, 2…3, 4…5, and 6…7 are the two high-bit planes for the four consecutive 32-weight quarters; join with ql, then subtract 32."
+  ];
+}
+
+function localScaleTermSource(dtype: KQuantLayout["dtype"]): string {
+  if (dtype === "Q3_K") {
+    return "six packed bits in scales reconstruct d×(s[g]−32)";
+  }
+  if (dtype === "Q6_K") {
+    return "record field scales[g] is signed int8; localScale=d×signed_s[g]";
+  }
+  return `the ${K_QUANT_LAYOUTS[dtype].scaleBits}-bit s[g] packed in scales; localScale=d×s[g]`;
+}
+
+function codeTermSource(dtype: KQuantLayout["dtype"]): string {
+  if (dtype === "Q2_K" || dtype === "Q4_K") return "packed directly in qs";
+  if (dtype === "Q3_K") return "two low bits from qs plus the matching hmask bit";
+  if (dtype === "Q5_K") return "four low bits from qs plus the matching qh bit";
+  return "four low bits from ql plus two high bits from qh, followed by −32";
+}
+
+function term(
+  symbol: string,
+  meaning: string,
+  source: string
+): KQuantTermDefinition {
+  return { symbol, meaning, source };
 }
 
 function kQuantSections(

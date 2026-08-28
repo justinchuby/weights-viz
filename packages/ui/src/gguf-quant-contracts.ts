@@ -445,6 +445,7 @@ function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
       return [
         symbol("w′", "one reconstructed weight", "decoder output for the selected group, grid, and lane"),
         symbol("d", "global block scale", "FP16 record field d"),
+        symbol("i", "weight index inside the fixed block", "0…255 in source order"),
         symbol("group", "32-weight group number", "floor(i / 32), in the range 0…7 for block lane i"),
         symbol("subgrid", "eight-weight vector number inside the group", "floor((i mod 32) / 8), in the range 0…3"),
         symbol("s", "three-bit local scale code", "bits 12…14 of qh[group]"),
