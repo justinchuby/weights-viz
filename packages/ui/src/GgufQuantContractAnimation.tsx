@@ -12,12 +12,12 @@ import {
 
 const STEPS: readonly AnimationStep[] = [
   {
-    label: "Select a source lane",
+    label: "Select a source weight",
     detail: "Follow one concrete weight inside one fixed metadata group."
   },
   {
     label: "Select metadata and code",
-    detail: "Choose the exact shared parameters, code, and runtime table entry needed by that lane."
+    detail: "Choose the exact shared parameters, code, and runtime table entry needed by that weight."
   },
   {
     label: "Extract record bits",
@@ -25,7 +25,7 @@ const STEPS: readonly AnimationStep[] = [
   },
   {
     label: "Reconstruct the value",
-    detail: "Apply the dtype’s decode rule to the selected lane; no new storage terms are introduced here."
+    detail: "Apply the dtype’s decode rule to the selected weight; no new storage terms are introduced here."
   }
 ];
 
@@ -49,7 +49,7 @@ export function GgufQuantContractAnimation({ dtype }: { dtype: string }) {
             Trace {dtype} weight {selection.weight}
           </h3>
           <p>
-            One concrete lane from source selection through packed storage to
+            One concrete weight position from source selection through packed storage to
             reconstruction. All field names and formula terms are defined in the
             Storage contract above.
           </p>
@@ -72,20 +72,16 @@ export function GgufQuantContractAnimation({ dtype }: { dtype: string }) {
             <Fact label="Block" value={`${contract.values} weights`} />
             <Fact label="Record" value={`${contract.bytes} bytes`} />
             <Fact
-              label={dtype === "IQ4_NL" ? "Group" : "Selected group"}
-              value={
-                dtype === "IQ4_NL"
-                  ? "0 = the whole 32-weight block"
-                  : `${selection.group} · ${contract.groups.label}`
-              }
+              label="Group"
+              value={`group ${selection.group} = weights ${
+                selection.group * contract.groups.values
+              }…${(selection.group + 1) * contract.groups.values - 1}`}
             />
             <Fact
-              label={dtype === "IQ4_NL" ? "Lane inside group" : "Group position"}
-              value={
-                dtype === "IQ4_NL"
-                  ? `25 → i = 0×32 + 25 = ${selection.weight}`
-                  : `${selection.lane} → w[${selection.weight}]`
-              }
+              label="Position in group"
+              value={`${selection.position} → i = ${selection.group}×${
+                contract.groups.values
+              } + ${selection.position} = ${selection.weight}`}
             />
           </div>
 

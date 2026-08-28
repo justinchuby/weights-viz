@@ -61,11 +61,14 @@ describe("dtype animation coverage", () => {
     expect(iq4Nl?.symbols.find(({ symbol }) => symbol === "group")?.source).toContain(
       "whole 32-weight record"
     );
-    expect(iq4Nl?.symbols.find(({ symbol }) => symbol === "lane")?.source).toContain(
-      "rather than a CPU/SIMD lane"
+    expect(iq4Nl?.symbols.find(({ symbol }) => symbol === "position")?.source).toContain(
+      "position = i mod 32"
     );
     expect(iq4Nl?.packing).toContain(
-      "lane 16…31 → high nibble of qs[lane − 16]"
+      "position 16…31 → high nibble of qs[position − 16]"
+    );
+    expect(iq4Nl?.codes.join(" ")).toContain(
+      "no multi-value grid and therefore no grid lane"
     );
     expect(iq4Nl?.worked.stages[0].detail).toContain(
       "0 × 32 + 25 = weight 25"
@@ -103,6 +106,41 @@ describe("dtype animation coverage", () => {
       "06",
       "…"
     ]);
+  });
+
+  it("separates metadata-group position from codebook grid lane", () => {
+    const gridDtypes = new Set([
+      "IQ2_XXS",
+      "IQ2_XS",
+      "IQ3_XXS",
+      "IQ1_S",
+      "IQ3_S",
+      "IQ2_S",
+      "IQ1_M"
+    ]);
+
+    for (const dtype of GGUF_QUANT_CONTRACT_DTYPES) {
+      const contract = ggufQuantContract(dtype)!;
+      expect(contract.symbols.some(({ symbol }) => symbol === "group")).toBe(true);
+      expect(contract.symbols.some(({ symbol }) => symbol === "position")).toBe(true);
+      const lane = contract.symbols.find(({ symbol }) => symbol === "lane");
+      if (gridDtypes.has(dtype)) {
+        expect(lane?.source).toContain("lane = position mod");
+      } else {
+        expect(lane).toBeUndefined();
+      }
+    }
+
+    const iq3s = ggufQuantContract("IQ3_S")!;
+    expect(iq3s.worked.stages[0].detail).toContain(
+      "sign-mask position 6, and four-value grid lane = 30 mod 4 = 2"
+    );
+    expect(iq3s.worked.stages[2].accesses).toContainEqual({
+      field: "signs",
+      index: "11",
+      bits: "bit 6",
+      action: "read sign-mask position 6"
+    });
   });
 });
 
@@ -393,7 +431,7 @@ describe("GGUF physical animation layouts", () => {
   );
 
   it.each(GGUF_QUANT_CONTRACT_DTYPES)(
-    "%s traces one concrete lane through source, metadata, storage, and reconstruction",
+    "%s traces one concrete position through source, metadata, storage, and reconstruction",
     (dtype) => {
       const contract = ggufQuantContract(dtype);
       const fields = ggufStorageLayout(dtype);
@@ -410,10 +448,10 @@ describe("GGUF physical animation layouts", () => {
       ]);
       expect(selection.group).toBeGreaterThanOrEqual(0);
       expect(selection.group).toBeLessThan(contract.groups.count);
-      expect(selection.lane).toBeGreaterThanOrEqual(0);
-      expect(selection.lane).toBeLessThan(contract.groups.values);
+      expect(selection.position).toBeGreaterThanOrEqual(0);
+      expect(selection.position).toBeLessThan(contract.groups.values);
       expect(selection.weight).toBe(
-        selection.group * contract.groups.values + selection.lane
+        selection.group * contract.groups.values + selection.position
       );
 
       const symbolNames = new Set(contract.symbols.map(({ symbol }) => symbol));
@@ -451,7 +489,7 @@ describe("GGUF physical animation layouts", () => {
     ).toContain("final 32 bytes hold sign masks");
   });
 
-  it("reads Q5_0 lane 18's fifth bit from the uint32 qh plane", () => {
+  it("reads Q5_0 position 18's fifth bit from the uint32 qh plane", () => {
     const storage = ggufQuantContract("Q5_0")?.worked.stages[2];
     expect(storage?.kind).toBe("storage");
     if (storage?.kind !== "storage") throw new Error("Missing Q5_0 storage stage");
@@ -459,7 +497,7 @@ describe("GGUF physical animation layouts", () => {
       field: "qh",
       index: "little-endian uint32 view of bytes 0…3",
       bits: "bit 18",
-      action: "take lane 18’s storedCode bit 4"
+      action: "take position 18’s storedCode bit 4"
     });
   });
 
@@ -467,6 +505,7 @@ describe("GGUF physical animation layouts", () => {
     const symbols = ggufQuantContract("IQ1_S")?.symbols;
     expect(symbols?.map((item) => item.symbol)).toEqual([
       "w[i]",
+      "position",
       "w′",
       "d",
       "i",
@@ -481,6 +520,9 @@ describe("GGUF physical animation layouts", () => {
     ]);
     expect(symbols?.find((item) => item.symbol === "index")?.source).toContain(
       "qs[4×group + subgrid]"
+    );
+    expect(symbols?.find((item) => item.symbol === "position")?.source).toContain(
+      "position = i mod 32"
     );
     expect(
       symbols?.find((item) => item.symbol === "signedGrid")?.source

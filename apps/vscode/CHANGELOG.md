@@ -2,8 +2,9 @@
 
 ## Unreleased
 
-- Define IQ4_NL `group`, `lane`, and record-local `i` before use, including
-  the exact lane-to-low/high-nibble mapping and a concrete lane 25 example.
+- Standardize every complex GGUF lesson on `group`, group-local `position`, and
+  record-local `i`; reserve `lane` for multi-value grids and derive it explicitly
+  as `position mod 4/8`, including exact scalar nibble mappings.
 
 ## 0.4.0
 

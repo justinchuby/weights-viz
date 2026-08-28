@@ -58,7 +58,7 @@ export type GgufQuantWorkedStage =
 export interface GgufQuantWorkedExample {
   selection: {
     group: number;
-    lane: number;
+    position: number;
     weight: number;
   };
   stages: readonly [
@@ -246,9 +246,9 @@ const CONTRACTS: Record<string, GgufQuantContract> = {
     1,
     32,
     "one shared nonlinear range",
-    ["group 0 is the entire 32-weight record; all lanes 0…31 share its FP16 d", "conversion searches d and nearest fixed levels", "the 16-level table is part of the runtime ABI"],
-    ["lane = i ∈ [0, 31] is the weight’s position inside group 0, not a CPU/SIMD lane", "a nibble selects one signed nonlinear level", "levels = −127, −104, −83, −65, −49, −35, −22, −10, 1, 13, 25, 38, 53, 69, 89, 113", "no sign mask and no zero-point"],
-    ["lane 0…15 → low nibble of qs[lane]", "lane 16…31 → high nibble of qs[lane − 16]", "16 split-half nibble bytes store all 32 lanes"],
+    ["group 0 is the entire 32-weight record; all positions 0…31 share its FP16 d", "conversion searches d and nearest fixed levels", "the 16-level table is part of the runtime ABI"],
+    ["position = i ∈ [0, 31] is the weight’s offset inside group 0", "a nibble selects one scalar signed nonlinear level; IQ4_NL has no multi-value grid and therefore no grid lane", "levels = −127, −104, −83, −65, −49, −35, −22, −10, 1, 13, 25, 38, 53, 69, 89, 113", "no sign mask and no zero-point"],
+    ["position 0…15 → low nibble of qs[position]", "position 16…31 → high nibble of qs[position − 16]", "16 split-half nibble bytes store all 32 positions"],
     "w′ = d × nonlinearLevel[nibble]",
     "The nonuniform table spends more resolution near zero while retaining large-magnitude endpoints."
   ),
@@ -261,8 +261,8 @@ const CONTRACTS: Record<string, GgufQuantContract> = {
     32,
     "8 signed-scale groups",
     ["one FP16 global d", "each group stores a signed 6-bit local scale ls − 32", "four low bits live in scales_l; two high bits live in scales_h"],
-    ["each nibble selects the IQ4_NL signed level table", "local scale code ls ∈ [0, 63]", "there is no separate sign mask"],
-    ["scales_h contains eight 2-bit scale highs", "scales_l packs eight 4-bit scale lows", "qs pairs lanes i and i + 16 within each 32-weight group"],
+    ["each nibble selects one scalar from the IQ4_NL signed level table; there is no grid lane", "local scale code ls ∈ [0, 63]", "there is no separate sign mask"],
+    ["scales_h contains eight 2-bit scale highs", "scales_l packs eight 4-bit scale lows", "qs pairs positions i and i + 16 within each 32-weight group"],
     "w′ = d × (ls − 32) × nonlinearLevel[nibble]",
     "The signed local scale can flip the fixed signed codebook while adapting each 32-weight group."
   ),
@@ -318,7 +318,7 @@ const CONTRACTS: Record<string, GgufQuantContract> = {
     "one shared exponent",
     ["e is one unsigned E8M0 exponent", "conversion chooses e from the block maximum", "GGML’s E8M0-half helper includes a special denormal path for e = 0"],
     ["each nibble is one signed E2M1 FP4 code", "magnitudes represent 0, 0.5, 1, 1.5, 2, 3, 4, 6", "bit 3 is the sign"],
-    ["e is the first byte", "qs[j].low → lane j", "qs[j].high → lane j + 16"],
+    ["e is the first byte", "qs[j].low → position j", "qs[j].high → position j + 16"],
     "w′ = E8M0_HALF(e) × doubledE2M1[nibble]",
     "GGML stores a doubled integer E2M1 table and halves the shared scale, yielding the standard FP4 values."
   ),
@@ -418,13 +418,13 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         19,
         19,
         "Select source weight 19 in the only 32-weight affine group.",
-        "Use the group’s FP16 d and m; quantization selects unsigned q for lane 19.",
+        "Use the group’s FP16 d and m; quantization selects unsigned q for position 19.",
         [
           access("d", "0", "all 16 bits", "read the affine step"),
           access("m", "0", "all 16 bits", "read the shared minimum"),
-          access("qs", "3", "bits 4…7", "extract lane 19’s high nibble as q")
+          access("qs", "3", "bits 4…7", "extract position 19’s high nibble as q")
         ],
-        "Reconstruct lane 19 as w′ = d × q + m.",
+        "Reconstruct position 19 as w′ = d × q + m.",
         ["w′"],
         ["d", "m", "q"],
         ["d", "m", "q"],
@@ -436,11 +436,11 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         18,
         18,
         "Select source weight 18 in the only 32-weight signed group.",
-        "Use FP16 d and select lane 18’s biased five-bit storedCode.",
+        "Use FP16 d and select position 18’s biased five-bit storedCode.",
         [
           access("d", "0", "all 16 bits", "read the shared signed scale"),
           access("qs", "2", "bits 4…7", "take storedCode bits 0…3"),
-          access("qh", "little-endian uint32 view of bytes 0…3", "bit 18", "take lane 18’s storedCode bit 4")
+          access("qh", "little-endian uint32 view of bytes 0…3", "bit 18", "take position 18’s storedCode bit 4")
         ],
         "Join the qh bit above the qs nibble, then compute w′ = d × (storedCode − 16).",
         ["w′"],
@@ -454,7 +454,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         7,
         7,
         "Select source weight 7 in the only 32-weight affine group.",
-        "Use FP16 d and m; quantization selects lane 7’s unsigned five-bit code.",
+        "Use FP16 d and m; quantization selects position 7’s unsigned five-bit code.",
         [
           access("d", "0", "all 16 bits", "read the affine step"),
           access("m", "0", "all 16 bits", "read the shared minimum"),
@@ -473,12 +473,12 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         11,
         11,
         "Select source weight 11 in the only 32-weight signed group.",
-        "Use the group’s FP16 d and select signed int8 q for lane 11.",
+        "Use the group’s FP16 d and select signed int8 q for position 11.",
         [
           access("d", "0", "all 16 bits", "read the shared scale"),
           access("qs", "11", "all 8 bits", "read q using the declared int8 storage type")
         ],
-        "Reconstruct lane 11 as w′ = d × int8(q).",
+        "Reconstruct position 11 as w′ = d × int8(q).",
         ["w′"],
         ["d", "q"],
         ["d", "q", "int8(…)"],
@@ -490,13 +490,13 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         13,
         13,
         "Select source weight 13 in the only 32-weight activation group.",
-        "Select signed q for lane 13; stored_d decodes it while stored_s carries the independently rounded encoder_d × Σq correction.",
+        "Select signed q for position 13; stored_d decodes it while stored_s carries the independently rounded encoder_d × Σq correction.",
         [
           access("d", "0", "all 16 bits", "read stored_d"),
           access("s", "0", "all 16 bits", "read stored_s for the fused correction"),
-          access("qs", "13", "all 8 bits", "read lane 13’s signed q")
+          access("qs", "13", "all 8 bits", "read position 13’s signed q")
         ],
-        "Reconstruct lane 13 as w′ = stored_d × q; a paired affine kernel consumes stored_s without recomputing Σq.",
+        "Reconstruct position 13 as w′ = stored_d × q; a paired affine kernel consumes stored_s without recomputing Σq.",
         ["w′"],
         ["q", "stored_d", "stored_s", "encoder_d", "Σq"],
         ["q", "stored_d", "stored_s"],
@@ -507,14 +507,14 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         6,
         7,
         103,
-        "Select weight i = 103: lane 7 of 16-weight sum group 6.",
+        "Select weight i = 103: position 7 of 16-weight sum group 6.",
         "Use FP32 d and signed q[i]; group 6 also selects the auxiliary sum used by affine dot products.",
         [
           access("d", "0", "all 32 bits", "read the block scale"),
           access("qs", "103", "all 8 bits", "read q[i] as signed int8"),
           access("bsums", "6", "all 16 bits", "read the sum for codes 96…111")
         ],
-        "Reconstruct this lane as w′[i] = d × q[i]; bsums[6] remains an auxiliary dot-product input.",
+        "Reconstruct this position as w′[i] = d × q[i]; bsums[6] remains an auxiliary dot-product input.",
         ["w′[i]", "i"],
         ["d", "q[i]", "i"],
         ["d", "q[i]", "i"],
@@ -525,7 +525,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         3,
         21,
         117,
-        "Select weight 117: lane 5 of eight-value subgrid 2 in 32-weight group 3.",
+        "Select weight 117: position 21 in group 3 gives subgrid = floor(21 / 8) = 2 and grid lane = 21 mod 8 = 5.",
         "Select group 3’s scale s, subgrid 2’s index and sign pattern, then lane 5 of the compiled grid.",
         [
           access("d", "0", "all 16 bits", "read the global scale"),
@@ -544,7 +544,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         5,
         9,
         89,
-        "Select weight 89: lane 1 of global eight-value grid word 11 in 16-weight group 5.",
+        "Select weight 89: position 9 in group 5 gives its second grid word and grid lane = 9 mod 8 = 1.",
         "Select group 5’s scale s plus grid word 11’s index and sign pattern; the codebook entry remains symbolic.",
         [
           access("d", "0", "all 16 bits", "read the global scale"),
@@ -563,7 +563,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         4,
         11,
         139,
-        "Select weight 139: lane 3 of subvector 1 in 32-weight group 4.",
+        "Select weight 139: position 11 in group 4 gives eight-weight subvector 1 and four-value grid lane = 11 mod 4 = 3.",
         "Select group 4’s s and sign pattern, then index byte 34 for the first four-value half of that subvector.",
         [
           access("d", "0", "all 16 bits", "read the global scale"),
@@ -582,7 +582,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         5,
         22,
         182,
-        "Select i = 182: lane 6 of subgrid 2 in 32-weight group 5.",
+        "Select i = 182: position 22 in group 5 gives subgrid = floor(22 / 8) = 2 and grid lane = 22 mod 8 = 6.",
         "Select index, s, and δ for group 5; signedGrid[index] is the compiled eight-value entry.",
         [
           access("d", "0", "all 16 bits", "read the global scale"),
@@ -602,16 +602,16 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         2,
         30,
         94,
-        "Select weight 94: lane 6 of subvector 3 in 32-weight group 2.",
-        "Select group 2’s s, grid index 23 for lanes 4…7, and sign bit 6 from signs byte 11.",
+        "Select weight 94: position 30 in group 2 gives subvector 3, sign-mask position 6, and four-value grid lane = 30 mod 4 = 2.",
+        "Select group 2’s s, grid index 23 for the second four-position half, and sign-mask bit 6 from signs byte 11.",
         [
           access("d", "0", "all 16 bits", "read the global scale"),
           access("scales", "1", "bits 0…3", "read group 2’s s"),
           access("qs", "23", "bits 0…7", "read the low eight index bits"),
           access("qh", "2", "bit 7", "read index 23’s high bit"),
-          access("signs", "11", "bit 6", "read the selected lane’s sign")
+          access("signs", "11", "bit 6", "read sign-mask position 6")
         ],
-        "Join index, take the selected compiled grid lane and sign, then compute w′ = d × (1 + 2s) × grid[index][lane] × sign.",
+        "Join index, take grid[index][lane 2] and sign-mask bit 6, then compute w′ = d × (1 + 2s) × grid[index][lane] × sign.",
         ["w′", "lane"],
         ["d", "s", "index", "grid", "lane", "sign"],
         ["d", "s", "index", "sign"],
@@ -622,7 +622,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         9,
         10,
         154,
-        "Select weight 154: lane 2 of global eight-value grid 19 in 16-weight group 9.",
+        "Select weight 154: position 10 in group 9 gives its second grid word (global grid 19) and grid lane = 10 mod 8 = 2.",
         "Select group 9’s s, grid 19’s ten-bit index, and its explicit sign mask; the grid value stays symbolic.",
         [
           access("d", "0", "all 16 bits", "read the global scale"),
@@ -642,11 +642,11 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         0,
         25,
         25,
-        "There is one group: group 0 = weights 0…31. Select lane 25, so i = group × 32 + lane = 0 × 32 + 25 = weight 25.",
-        "Use group 0’s shared FP16 d. Lane 25 is in the second half, so its code is the high nibble of qs[25 − 16] = qs[9].",
+        "There is one group: group 0 = weights 0…31. Select position 25, so i = group × 32 + position = 0 × 32 + 25 = weight 25.",
+        "Use group 0’s shared FP16 d. Position 25 is in the second half, so its code is the high nibble of qs[25 − 16] = qs[9].",
         [
           access("d", "0", "all 16 bits", "read the shared scale"),
-          access("qs", "9", "bits 4…7", "read lane 25’s nibble")
+          access("qs", "9", "bits 4…7", "read position 25’s nibble")
         ],
         "Use nibble as the compiled nonlinearLevel index, then compute w′ = d × nonlinearLevel[nibble].",
         ["w′"],
@@ -659,13 +659,13 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         6,
         27,
         219,
-        "Select weight 219: lane 27 in 32-weight signed-scale group 6.",
-        "Select group 6’s six-bit ls and lane 27’s nonlinear table nibble.",
+        "Select weight 219: position 27 in 32-weight signed-scale group 6.",
+        "Select group 6’s six-bit ls and position 27’s nonlinear table nibble.",
         [
           access("d", "0", "all 16 bits", "read the global scale"),
           access("scales_l", "3", "bits 0…3", "read ls bits 0…3 for group 6"),
           access("scales_h", "0", "bits 12…13", "read ls bits 4…5 for group 6"),
-          access("qs", "107", "bits 4…7", "read lane 27’s nibble")
+          access("qs", "107", "bits 4…7", "read position 27’s nibble")
         ],
         "Join ls, subtract its fixed bias, look up nonlinearLevel[nibble], and compute w′ = d × (ls − 32) × nonlinearLevel[nibble].",
         ["w′"],
@@ -678,7 +678,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         10,
         5,
         165,
-        "Select weight 165: lane 5 of eight-value vector 20 in local-scale group 10.",
+        "Select weight 165: position 5 in group 10 gives global eight-value vector 20 and grid lane = 5 mod 8 = 5.",
         "Select vector 20’s index and δ plus group 10’s s; embedded_d is assembled once for the block.",
         [
           access("scales", "uint16 views 0…3", "bits 12…15 of each", "join the four nibbles into embedded_d"),
@@ -699,7 +699,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         137,
         137,
         "Select source weight 137 in the single 256-weight ternary range.",
-        "Quantization selects base3Digit 0, 1, or 2 for lane 137.",
+        "Quantization selects base3Digit 0, 1, or 2 for position 137.",
         [
           access("d", "0", "all 16 bits", "read the trailing shared magnitude"),
           access("qs", "9", "interleaved trit position 4", "compute q = uint8(qs[9] × 3⁴), then base3Digit = (uint16(q) × 3) >> 8")
@@ -719,7 +719,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         "Quantization selects twoBitCode 0, 1, or 2; binary 11 remains unused.",
         [
           access("d", "0", "all 16 bits", "read the trailing shared magnitude"),
-          access("qs", "41", "bits 0…1", "extract lane 137 from the second 32-byte interleaved plane")
+          access("qs", "41", "bits 0…1", "extract position 137 from the second 32-byte interleaved plane")
         ],
         "Remove the ternary storage bias and reconstruct w′ = d × (twoBitCode − 1).",
         ["w′"],
@@ -733,10 +733,10 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         21,
         21,
         "Select source weight 21 in the only 32-weight microscale group.",
-        "Select shared exponent e and lane 21’s signed E2M1 nibble.",
+        "Select shared exponent e and position 21’s signed E2M1 nibble.",
         [
           access("e", "0", "all 8 bits", "read the E8M0 exponent code"),
-          access("qs", "5", "bits 4…7", "read lane 21’s nibble")
+          access("qs", "5", "bits 4…7", "read position 21’s nibble")
         ],
         "Decode E8M0_HALF(e), look up doubledE2M1[nibble], and compute w′ = E8M0_HALF(e) × doubledE2M1[nibble].",
         ["w′"],
@@ -749,11 +749,11 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         2,
         11,
         43,
-        "Select weight 43: lane 11 in 16-weight local-scale group 2.",
-        "Select d[group] and lane 11’s signed E2M1 nibble.",
+        "Select weight 43: position 11 in 16-weight local-scale group 2.",
+        "Select d[group] and position 11’s signed E2M1 nibble.",
         [
           access("d", "2", "all 8 bits", "read group 2’s UE4M3 scale code"),
-          access("qs", "19", "bits 4…7", "read group-local lane 11’s nibble")
+          access("qs", "19", "bits 4…7", "read group-local position 11’s nibble")
         ],
         "Decode UE4M3(d[group]), look up doubledE2M1[nibble], and compute w′ = UE4M3(d[group]) × doubledE2M1[nibble].",
         ["w′", "group"],
@@ -767,10 +767,10 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         77,
         77,
         "Select source weight 77 in the only 128-weight magnitude group.",
-        "Use FP16 d and select signBit for lane 77.",
+        "Use FP16 d and select signBit for position 77.",
         [
           access("d", "0", "all 16 bits", "read the shared positive magnitude"),
-          access("qs", "9", "bit 5", "read lane 77’s LSB-first signBit")
+          access("qs", "9", "bit 5", "read position 77’s LSB-first signBit")
         ],
         "Select the +d / −d level directly from signBit to produce w′.",
         ["w′"],
@@ -784,10 +784,10 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         46,
         46,
         "Select source weight 46 in the only 64-weight four-level group.",
-        "Use FP16 d and select lane 46’s biased twoBitCode.",
+        "Use FP16 d and select position 46’s biased twoBitCode.",
         [
           access("d", "0", "all 16 bits", "read the shared magnitude"),
-          access("qs", "11", "bits 4…5", "read lane 46’s twoBitCode")
+          access("qs", "11", "bits 4…5", "read position 46’s twoBitCode")
         ],
         "Remove the implicit bias and reconstruct w′ = d × (twoBitCode − 1).",
         ["w′"],
@@ -802,7 +802,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
 
 function worked(
   group: number,
-  lane: number,
+  position: number,
   weight: number,
   source: string,
   metadata: string,
@@ -817,18 +817,18 @@ function worked(
   reconstructionSymbols: readonly string[]
 ): GgufQuantWorkedExample {
   return {
-    selection: { group, lane, weight },
+    selection: { group, position, weight },
     stages: [
       {
         kind: "source",
-        title: "Select one source lane",
+        title: "Select one source weight",
         detail: source,
         symbols: Array.from(
           new Set([
             "w[i]",
             "i",
             "group",
-            "lane",
+            "position",
             ...sourceSymbols.filter(
               (symbol) => symbol !== "w′" && symbol !== "w′[i]"
             )
@@ -839,7 +839,7 @@ function worked(
       {
         kind: "storage",
         title: "Extract exact record bits",
-        detail: "Read only the named record fields and packed slices for this lane.",
+        detail: "Read only the named record fields and packed slices for this weight position.",
         symbols: storageSymbols,
         accesses
       },
@@ -863,8 +863,14 @@ function contractSymbols(
   const common = [
     symbol("w[i]", "original source weight at index i", "encoder input; it is not stored in the record"),
     symbol("i", "weight index inside the fixed record", `0…${values - 1} in source order`),
-    symbol("group", "metadata-sharing group index", `${groupCount} group${groupCount === 1 ? "" : "s"} numbered 0…${groupCount - 1}`),
-    symbol("lane", "position inside the selected group", `0…${groupValues - 1}; i = group×${groupValues} + lane`)
+    symbol(
+      "group",
+      "metadata-sharing group index",
+      groupCount === 1
+        ? `only group 0; it is the whole ${values}-weight record`
+        : `${groupCount} groups numbered 0…${groupCount - 1}; group = floor(i / ${groupValues})`
+    ),
+    symbol("position", "weight offset inside the selected group", `0…${groupValues - 1}; position = i mod ${groupValues}; i = group×${groupValues} + position`)
   ];
   const existing = new Set(specific.map(({ symbol: name }) => name));
   return [...common.filter(({ symbol: name }) => !existing.has(name)), ...specific];
@@ -883,54 +889,55 @@ function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
   switch (dtype) {
     case "Q4_1":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
         symbol("d", "affine step size", "FP16 record field d"),
-        symbol("q", "unsigned four-bit code", "the lane’s nibble in qs"),
+        symbol("q", "unsigned four-bit code", "the selected position’s nibble in qs"),
         symbol("m", "shared minimum", "FP16 record field m")
       ];
     case "Q5_0":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
         symbol("storedCode", "unsigned five-bit code", "four low bits from qs joined with bit i from qh"),
-        symbol("join(qh, qs)", "five-bit assembly operation", "take the lane’s qh bit as bit 4 and its qs nibble as bits 0…3"),
+        symbol("join(qh, qs)", "five-bit assembly operation", "take the selected position’s qh bit as bit 4 and its qs nibble as bits 0…3"),
         symbol("qh", "high-code bit plane", "the four qh bytes interpreted as one little-endian uint32"),
-        symbol("qs", "low four code bits", "the lane’s nibble in record field qs"),
+        symbol("qs", "low four code bits", "the selected position’s nibble in record field qs"),
         symbol("d", "shared signed scale", "FP16 record field d"),
         symbol("16", "implicit code bias", "fixed Q5_0 format constant; it occupies no record bytes")
       ];
     case "Q5_1":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
-        symbol("join(qh, qs)", "unsigned five-bit code", "one high bit from qh plus the lane’s four-bit qs nibble"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
+        symbol("join(qh, qs)", "unsigned five-bit code", "one high bit from qh plus the selected position’s four-bit qs nibble"),
         symbol("d", "affine step size", "FP16 record field d"),
         symbol("m", "shared minimum", "FP16 record field m")
       ];
     case "Q8_0":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
         symbol("d", "shared scale", "FP16 record field d"),
-        symbol("q", "signed eight-bit code", "the lane’s int8 value in qs"),
+        symbol("q", "signed eight-bit code", "the selected position’s int8 value in qs"),
         symbol("int8(…)", "signed interpretation", "the declared int8_t storage type of qs")
       ];
     case "Q8_1":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
         symbol("stored_d", "rounded decode scale", "FP16 record field d"),
-        symbol("q", "signed eight-bit code", "the lane’s int8 value in qs"),
+        symbol("q", "signed eight-bit code", "the selected position’s int8 value in qs"),
         symbol("stored_s", "stored scaled code sum", "FP16 record field s"),
         symbol("encoder_d", "pre-rounding encoder scale", "temporary quantizer value; not stored"),
         symbol("Σq", "sum of all 32 codes", "computed by the encoder before s is rounded")
       ];
     case "Q8_K":
       return [
-        symbol("w′[i]", "reconstructed weight i", "decoder output lane i, where i is 0…255"),
+        symbol("w′[i]", "reconstructed weight i", "decoder output at record index i, where i is 0…255"),
         symbol("d", "shared block scale", "FP32 record field d"),
-        symbol("q[i]", "signed code for lane i", "record field qs[i]"),
-        symbol("i", "lane index", "position inside the fixed 256-weight block")
+        symbol("q[i]", "signed code for weight i", "record field qs[i]"),
+        symbol("i", "record-local weight index", "position inside the fixed 256-weight block")
       ];
     case "IQ2_XXS":
       return gridSymbols(
         "iq2xxs_grid",
+        8,
         "8-bit grid-index byte in qs",
         "7-bit sign index packed in the group’s second uint32",
         "4-bit s in bits 28…31 of that uint32",
@@ -941,6 +948,7 @@ function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
     case "IQ2_XS":
       return gridSymbols(
         "iq2xs_grid",
+        8,
         "low nine bits of the group’s uint16 qs word",
         "upper seven bits of the same qs word, expanded through ksigns_iq2xs",
         "one nibble from record field scales",
@@ -951,6 +959,7 @@ function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
     case "IQ3_XXS":
       return gridSymbols(
         "iq3xxs_grid",
+        4,
         "one 8-bit index in qs[0…63]",
         "7-bit sign index packed in qs[64…95], expanded through ksigns_iq2xs",
         "4-bit s in bits 28…31 of the group metadata word",
@@ -963,20 +972,21 @@ function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
         symbol("w′", "one reconstructed weight", "decoder output for the selected group, grid, and lane"),
         symbol("d", "global block scale", "FP16 record field d"),
         symbol("i", "weight index inside the fixed block", "0…255 in source order"),
-        symbol("group", "32-weight group number", "floor(i / 32), in the range 0…7 for block lane i"),
+        symbol("group", "32-weight group number", "floor(i / 32), in the range 0…7 for record index i"),
         symbol("subgrid", "eight-weight vector number inside the group", "floor((i mod 32) / 8), in the range 0…3"),
         symbol("s", "three-bit local scale code", "bits 12…14 of qh[group]"),
         symbol("index", "11-bit table index", "index = qs[4×group + subgrid] | (((qh[group] >> (3×subgrid)) & 7) << 8)"),
         symbol("signedGrid", "fixed 2048-entry table of signed eight-value vectors", "GGML’s compiled iq1s_grid codebook—not bytes in the file; each lane is −1, 0, or +1, and quantization selects the best table index"),
-        symbol("lane", "position inside the selected eight-value vector", "i mod 8, in the range 0…7; output i = 32×group + 8×subgrid + lane"),
+        symbol("lane", "position inside the selected eight-value grid", "lane = position mod 8, in the range 0…7; i = 32×group + 8×subgrid + lane"),
         symbol("δ", "small signed grid offset", "qh[group] bit 15 chooses −0.125 when set, +0.125 when clear"),
         symbol("2s + 1", "odd local multiplier", "fixed IQ1_S decode rule applied to the stored scale code s")
       ];
     case "IQ3_S":
       return gridSymbols(
         "iq3s_grid",
+        4,
         "eight low bits from qs plus one matching high bit from qh",
-        "the matching lane bit in record field signs",
+        "the matching sign-mask position in record field signs",
         "one nibble from record field scales",
         "d",
         "FP16 record field d",
@@ -985,6 +995,7 @@ function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
     case "IQ2_S":
       return gridSymbols(
         "iq2s_grid",
+        8,
         "eight low bits from qs[0…31] plus two matching high bits from qh",
         "the matching mask bit from qs[32…63]",
         "one nibble from record field scales",
@@ -994,21 +1005,21 @@ function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
       );
     case "IQ4_NL":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
         symbol("i", "weight index inside this record", "i ∈ [0, 31]; IQ4_NL stores 32 weights per record"),
         symbol("group", "metadata-sharing group number", "IQ4_NL has exactly one group: group 0 is the whole 32-weight record and shares d"),
-        symbol("lane", "weight position inside group 0", "lane ∈ [0, 31], lane = i, and this is a storage coordinate rather than a CPU/SIMD lane"),
+        symbol("position", "weight offset inside group 0", "position = i mod 32 = i, in the range 0…31; i = group×32 + position"),
         symbol("d", "shared block scale", "FP16 record field d"),
-        symbol("nibble", "four-bit codebook index", "the lane’s low or high nibble in qs"),
+        symbol("nibble", "four-bit codebook index", "the selected position’s low or high nibble in qs"),
         symbol("nonlinearLevel", "fixed 16-entry signed level table", "GGML’s compiled kvalues_iq4nl table, not bytes in this record")
       ];
     case "IQ4_XS":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
         symbol("d", "global block scale", "FP16 record field d"),
         symbol("ls", "unsigned six-bit local-scale code", "four low bits from scales_l plus two high bits from scales_h"),
         symbol("32", "local-scale zero bias", "fixed IQ4_XS format constant; it occupies no record bytes"),
-        symbol("nibble", "four-bit codebook index", "the lane’s nibble in qs"),
+        symbol("nibble", "four-bit codebook index", "the selected position’s nibble in qs"),
         symbol("nonlinearLevel", "fixed 16-entry signed level table", "GGML’s compiled kvalues_iq4nl table")
       ];
     case "IQ1_M":
@@ -1018,53 +1029,53 @@ function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
         symbol("s", "three-bit local scale code", "the matching three-bit slice in the lower 12 bits of scales"),
         symbol("index", "11-bit table index", "eight low bits from qs plus three high bits from the matching qh nibble"),
         symbol("signedGrid", "fixed 2048-entry table of signed eight-value vectors", "GGML’s compiled iq1s_grid table; each lane is −1, 0, or +1"),
-        symbol("lane", "position inside the selected eight-value vector", "j = 0…7 for the eight weights represented by that index"),
+        symbol("lane", "position inside the selected eight-value grid", "lane = position mod 8, in the range 0…7"),
         symbol("δ", "small signed grid offset", "bit 3 of the matching qh nibble chooses the IQ1_M ±0.125 constant"),
         symbol("2s + 1", "odd local multiplier", "fixed IQ1_M decode rule applied to s")
       ];
     case "TQ1_0":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
         symbol("d", "shared magnitude", "trailing FP16 record field d"),
-        symbol("base3Digit", "stored ternary digit 0, 1, or 2", "extracted from the lane’s packed byte in qs or qh"),
+        symbol("base3Digit", "stored ternary digit 0, 1, or 2", "extracted from the selected position’s packed byte in qs or qh"),
         symbol("1", "ternary storage bias", "fixed format constant mapping digits 0/1/2 to −1/0/+1")
       ];
     case "TQ2_0":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
         symbol("d", "shared magnitude", "trailing FP16 record field d"),
-        symbol("twoBitCode", "stored two-bit code 0, 1, or 2", "the lane’s two-bit slice in qs; binary 11 is unused"),
+        symbol("twoBitCode", "stored two-bit code 0, 1, or 2", "the selected position’s two-bit slice in qs; binary 11 is unused"),
         symbol("1", "ternary storage bias", "fixed format constant mapping codes 0/1/2 to −1/0/+1")
       ];
     case "MXFP4":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
         symbol("e", "shared E8M0 exponent code", "leading uint8 record field e"),
         symbol("E8M0_HALF(e)", "decoded half-scale", "GGML helper applied to e, including its e = 0 path"),
-        symbol("nibble", "signed E2M1 FP4 code", "the lane’s low or high nibble in qs"),
+        symbol("nibble", "signed E2M1 FP4 code", "the selected position’s low or high nibble in qs"),
         symbol("doubledE2M1", "fixed doubled FP4 lookup table", "GGML runtime table; the half-scale compensates for the doubled entries")
       ];
     case "NVFP4":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
-        symbol("group", "local 16-weight group index", "floor(lane / 16), selecting d[0…3]"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
+        symbol("group", "local 16-weight group index", "floor(i / 16), selecting d[0…3]"),
         symbol("d[group]", "UE4M3 local-scale code", "record byte d[group]"),
         symbol("UE4M3(…)", "decoded half-scale", "GGML UE4M3 decode helper"),
-        symbol("nibble", "signed E2M1 FP4 code", "the lane’s low or high nibble in qs"),
+        symbol("nibble", "signed E2M1 FP4 code", "the selected position’s low or high nibble in qs"),
         symbol("doubledE2M1", "fixed doubled FP4 lookup table", "GGML runtime table")
       ];
     case "Q1_0":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
-        symbol("signBit", "stored sign selector", "the lane’s bit in record field qs"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
+        symbol("signBit", "stored sign selector", "the selected position’s bit in record field qs"),
         symbol("d", "shared positive magnitude", "FP16 record field d"),
         symbol("+d / −d", "the two reconstruction levels", "selected directly by signBit; no zero level is stored")
       ];
     case "Q2_0":
       return [
-        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("w′", "one reconstructed weight", "decoder output for the selected position"),
         symbol("d", "shared magnitude", "FP16 record field d"),
-        symbol("twoBitCode", "unsigned two-bit code", "the lane’s two-bit slice in qs"),
+        symbol("twoBitCode", "unsigned two-bit code", "the selected position’s two-bit slice in qs"),
         symbol("1", "implicit storage bias", "fixed Q2_0 format constant; it occupies no record bytes")
       ];
     default:
@@ -1074,6 +1085,7 @@ function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
 
 function gridSymbols(
   table: string,
+  laneWidth: 4 | 8,
   indexSource: string,
   signSource: string,
   scaleSource: string,
@@ -1087,7 +1099,7 @@ function gridSymbols(
     symbol("s", "local scale code", scaleSource),
     symbol("index", "grid-table index", indexSource),
     symbol("grid", "fixed multi-value magnitude table", `GGML’s compiled ${table} table; it is not stored in this record`),
-    symbol("lane", "position inside the selected grid vector", "the current j position within that table entry"),
+    symbol("lane", "position inside the selected grid vector", `lane = position mod ${laneWidth}, in the range 0…${laneWidth - 1}`),
     symbol("sign", "per-lane +1 or −1 multiplier", signSource),
     symbol(constants[0], constants[1], "fixed format constant; it occupies no record bytes")
   ];
