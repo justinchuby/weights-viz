@@ -30,6 +30,11 @@
 - Draw each K-quant physical super-block record together with its logical
   sub-block ranges and exact shared-array bit locations, distinguish one
   logical `q` from the packed `qs` byte array, and enlarge lesson typography.
+- Trace encoder-only local parameters `a[g]` and `b[g]` through rounding into
+  stored `s[g]` and `m[g]`, including concrete `scales[]` bits and record bytes.
+- Reorder every complex GGUF lesson from fields and terms through production,
+  layout, and reconstruction, then animate one concrete lane instead of
+  repeating the Storage contract definitions.
 
 ## 0.3.0
 

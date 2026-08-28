@@ -412,6 +412,7 @@ function BlockDiagram({
   const codes = exactContract?.codes ?? kContract?.codes ?? fallback?.codes;
   const packing = exactContract?.packing ?? kContract?.packing ?? fallback?.packing;
   const terms = exactContract?.symbols ?? kContract?.terms ?? fallback?.terms;
+  const derivation = kContract?.derivation;
   let byteOffset = 0;
   const fieldOffsets = fields?.map((field) => {
     const start = byteOffset;
@@ -462,6 +463,35 @@ function BlockDiagram({
             ))}
           </dl>
         </section>
+      )}
+      {derivation && kLayout && (
+        <section className="wv-storage-derivation">
+          <header>
+            <strong>
+              {kLayout.minBits !== undefined
+                ? "How encoder-only a[g] / b[g] become stored s[g] / m[g]"
+                : kLayout.dtype === "Q6_K"
+                  ? "How encoder-only a[g] becomes stored signed_s[g]"
+                  : "How encoder-only a[g] becomes stored s[g]"}
+            </strong>
+            <small>follow one sub-block from source weights to physical scales[] bits</small>
+          </header>
+          <ol>
+            {derivation.map((step) => (
+              <li key={step.title}>
+                <strong>{step.title}</strong>
+                <code>{step.expression}</code>
+                <p>{step.detail}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+      {metadata && codes && !derivation && (
+        <div className="wv-storage-rules wv-storage-rules-production">
+          <StorageRuleList title="How metadata is produced" items={metadata} />
+          <StorageRuleList title="How codes are produced" items={codes} />
+        </div>
       )}
       <header className="wv-storage-layout-heading">
         <strong>{kLayout ? "Physical super-block record" : "Physical block record"}</strong>
@@ -534,10 +564,15 @@ function BlockDiagram({
           a file cannot choose another block size. Metadata is shared by that group.
         </p>
       )}
-      {metadata && codes && packing && (
+      {metadata && codes && packing && derivation && (
         <div className="wv-storage-rules">
           <StorageRuleList title="Metadata meanings" items={metadata} />
           <StorageRuleList title="Code meanings and ranges" items={codes} />
+          <StorageRuleList title="Exact byte / bit layout" items={packing} />
+        </div>
+      )}
+      {packing && !derivation && (
+        <div className="wv-storage-rules wv-storage-rules-layout">
           <StorageRuleList title="Exact byte / bit layout" items={packing} />
         </div>
       )}

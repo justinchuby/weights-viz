@@ -179,6 +179,7 @@ describe("K-quant animation layouts", () => {
       expect(details.metadata.length).toBeGreaterThanOrEqual(3);
       expect(details.codes.length).toBeGreaterThanOrEqual(3);
       expect(details.packing.length).toBeGreaterThanOrEqual(3);
+      expect(details.derivation).toHaveLength(5);
       expect(details.terms.map((term) => term.symbol)).toEqual(
         expect.arrayContaining([
           "super-block",
@@ -197,6 +198,29 @@ describe("K-quant animation layouts", () => {
       }
     }
   );
+
+  it("traces Q4_K fitted parameters into stored scales bits", () => {
+    const details = kQuantContractDetails("Q4_K");
+    expect(details.derivation.map((step) => step.expression)).toEqual([
+      "w[g,l] ≈ a[g] × q[g,l] − b[g]",
+      "a[g] ≈ d × s[g] · b[g] ≈ dmin × m[g]",
+      "s[g] = clamp(round(a[g] / d), 0, 63) · m[g] = clamp(round(b[g] / dmin), 0, 63)",
+      "s[g], m[g] → scales[] bits",
+      "localScale[g] = d × s[g] · localMin[g] = dmin × m[g]"
+    ]);
+    expect(details.derivation[2]?.detail).toContain(
+      "a[0]=0.42 and d=0.01 give s[0]=42"
+    );
+    expect(details.derivation[3]?.detail).toContain(
+      "s[0]: scales[0] bits 0…5 (record byte 4)"
+    );
+    expect(details.terms.find(({ symbol }) => symbol === "b[g]")?.source).toContain(
+      "quantized into m[g]"
+    );
+    expect(
+      details.terms.find(({ symbol }) => symbol === "s[g] / subScale")?.source
+    ).toContain("s[g]=clamp(round(a[g]/d))");
+  });
 
   it("maps selected sub-block metadata to exact scales bytes and bits", () => {
     expect(kQuantMetadataBytes("Q2_K", 0)).toEqual([
@@ -355,15 +379,81 @@ describe("GGUF physical animation layouts", () => {
     }
   );
 
+  it.each(GGUF_QUANT_CONTRACT_DTYPES)(
+    "%s traces one concrete lane through source, metadata, storage, and reconstruction",
+    (dtype) => {
+      const contract = ggufQuantContract(dtype);
+      const fields = ggufStorageLayout(dtype);
+      expect(contract).toBeDefined();
+      expect(fields).toBeDefined();
+      if (!contract || !fields) throw new Error(`Missing ${dtype} contract`);
+
+      const { selection, stages } = contract.worked;
+      expect(stages.map(({ kind }) => kind)).toEqual([
+        "source",
+        "metadata",
+        "storage",
+        "reconstruction"
+      ]);
+      expect(selection.group).toBeGreaterThanOrEqual(0);
+      expect(selection.group).toBeLessThan(contract.groups.count);
+      expect(selection.lane).toBeGreaterThanOrEqual(0);
+      expect(selection.lane).toBeLessThan(contract.groups.values);
+      expect(selection.weight).toBe(
+        selection.group * contract.groups.values + selection.lane
+      );
+
+      const symbolNames = new Set(contract.symbols.map(({ symbol }) => symbol));
+      for (const stage of stages) {
+        expect(stage.title).toBeTruthy();
+        expect(stage.detail).toBeTruthy();
+        expect(stage.symbols.length).toBeGreaterThan(0);
+        for (const symbol of stage.symbols) {
+          expect(symbolNames.has(symbol), `${dtype} defines ${symbol}`).toBe(true);
+        }
+      }
+
+      const storage = stages[2];
+      expect(storage.kind).toBe("storage");
+      if (storage.kind !== "storage") throw new Error(`Missing ${dtype} storage stage`);
+      expect(storage.accesses.length).toBeGreaterThanOrEqual(2);
+      const fieldNames = new Set(fields.map(({ name }) => name));
+      for (const access of storage.accesses) {
+        expect(fieldNames.has(access.field), `${dtype} field ${access.field}`).toBe(
+          true
+        );
+        expect(access.index).toBeTruthy();
+        expect(access.bits).toBeTruthy();
+        expect(access.action).toBeTruthy();
+      }
+      expect(stages[3].symbols.some((symbol) => symbol.startsWith("w′"))).toBe(
+        true
+      );
+    }
+  );
+
   it("describes IQ2_S index and sign payloads within qs", () => {
     expect(
       ggufStorageLayout("IQ2_S")?.find((field) => field.name === "qs")?.role
     ).toContain("final 32 bytes hold sign masks");
   });
 
+  it("reads Q5_0 lane 18's fifth bit from the uint32 qh plane", () => {
+    const storage = ggufQuantContract("Q5_0")?.worked.stages[2];
+    expect(storage?.kind).toBe("storage");
+    if (storage?.kind !== "storage") throw new Error("Missing Q5_0 storage stage");
+    expect(storage.accesses).toContainEqual({
+      field: "qh",
+      index: "0",
+      bits: "bit 18",
+      action: "take lane 18’s storedCode bit 4"
+    });
+  });
+
   it("traces every IQ1_S reconstruction symbol to storage or runtime data", () => {
     const symbols = ggufQuantContract("IQ1_S")?.symbols;
     expect(symbols?.map((item) => item.symbol)).toEqual([
+      "w[i]",
       "w′",
       "d",
       "i",

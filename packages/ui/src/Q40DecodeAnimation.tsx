@@ -76,7 +76,7 @@ const STEPS = [
   },
   {
     label: "Decode",
-    detail: "Read a nibble n, recover q = n − 8, then reconstruct w′ = d × q. The gap is quantization error."
+    detail: "Read the stored nibble, recover q = nibble − 8, then reconstruct w′ = d × q. The gap is quantization error."
   },
   {
     label: "Fused dot product",
@@ -159,9 +159,9 @@ export function Q40DecodeAnimation() {
             ))}
           </FlowStage>
 
-          <FlowArrow active={step >= 2} label="n = q + 8" />
+          <FlowArrow active={step >= 2} label="nibble = q + 8" />
 
-          <FlowStage title="Packed bytes" subtitle="high n[i+16] · low n[i]" revealed={step >= 2} active={step === 2}>
+          <FlowStage title="Packed bytes" subtitle="high nibble[i+16] · low nibble[i]" revealed={step >= 2} active={step === 2}>
             {Q40_DEMO_PAIRS.map((pair) => (
               <div className="wv-q4-byte" key={pair.lowIndex}>
                 <span>{pair.highNibble.toString(2).padStart(4, "0")}</span>
@@ -171,7 +171,7 @@ export function Q40DecodeAnimation() {
             ))}
           </FlowStage>
 
-          <FlowArrow active={step >= 3} label="q = n−8 · × d" />
+          <FlowArrow active={step >= 3} label="q = nibble−8 · × d" />
 
           <FlowStage title="Approximate F32" subtitle="w′ = d × q · error" revealed={step >= 3} active={step === 3}>
             {Q40_DEMO_PAIRS.map((pair) => (

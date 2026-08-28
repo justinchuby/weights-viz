@@ -14,12 +14,59 @@ export interface GgufQuantContract {
   decode: string;
   symbols: readonly GgufQuantSymbol[];
   runtime: string;
+  worked: GgufQuantWorkedExample;
 }
 
 export interface GgufQuantSymbol {
   symbol: string;
   meaning: string;
   source: string;
+}
+
+export type GgufQuantWorkedStageKind =
+  | "source"
+  | "metadata"
+  | "storage"
+  | "reconstruction";
+
+interface GgufQuantWorkedStageBase {
+  kind: GgufQuantWorkedStageKind;
+  title: string;
+  detail: string;
+  symbols: readonly string[];
+}
+
+export interface GgufQuantWorkedStorageAccess {
+  field: string;
+  index: string;
+  bits: string;
+  action: string;
+}
+
+export type GgufQuantWorkedStage =
+  | (GgufQuantWorkedStageBase & {
+      kind: "source" | "metadata" | "reconstruction";
+    })
+  | (GgufQuantWorkedStageBase & {
+      kind: "storage";
+      accesses: readonly [
+        GgufQuantWorkedStorageAccess,
+        ...GgufQuantWorkedStorageAccess[]
+      ];
+    });
+
+export interface GgufQuantWorkedExample {
+  selection: {
+    group: number;
+    lane: number;
+    weight: number;
+  };
+  stages: readonly [
+    GgufQuantWorkedStage & { kind: "source" },
+    GgufQuantWorkedStage & { kind: "metadata" },
+    GgufQuantWorkedStage & { kind: "storage" },
+    GgufQuantWorkedStage & { kind: "reconstruction" }
+  ];
 }
 
 const CONTRACTS: Record<string, GgufQuantContract> = {
@@ -357,9 +404,479 @@ function contract(
     codes,
     packing,
     decode,
-    symbols: symbolOrigins(dtype),
-    runtime
+    symbols: contractSymbols(dtype, values, groupCount, groupValues),
+    runtime,
+    worked: workedExample(dtype)
   };
+}
+
+function workedExample(dtype: string): GgufQuantWorkedExample {
+  switch (dtype) {
+    case "Q4_1":
+      return worked(
+        0,
+        19,
+        19,
+        "Select source weight 19 in the only 32-weight affine group.",
+        "Use the group’s FP16 d and m; quantization selects unsigned q for lane 19.",
+        [
+          access("d", "0", "all 16 bits", "read the affine step"),
+          access("m", "0", "all 16 bits", "read the shared minimum"),
+          access("qs", "3", "bits 4…7", "extract lane 19’s high nibble as q")
+        ],
+        "Reconstruct lane 19 as w′ = d × q + m.",
+        ["w′"],
+        ["d", "m", "q"],
+        ["d", "m", "q"],
+        ["w′", "d", "q", "m"]
+      );
+    case "Q5_0":
+      return worked(
+        0,
+        18,
+        18,
+        "Select source weight 18 in the only 32-weight signed group.",
+        "Use FP16 d and select lane 18’s biased five-bit storedCode.",
+        [
+          access("d", "0", "all 16 bits", "read the shared signed scale"),
+          access("qs", "2", "bits 4…7", "take storedCode bits 0…3"),
+          access("qh", "0", "bit 18", "take lane 18’s storedCode bit 4")
+        ],
+        "Join the qh bit above the qs nibble, then compute w′ = d × (storedCode − 16).",
+        ["w′"],
+        ["d", "storedCode"],
+        ["d", "storedCode", "join(qh, qs)", "qh", "qs"],
+        ["w′", "d", "storedCode", "16"]
+      );
+    case "Q5_1":
+      return worked(
+        0,
+        7,
+        7,
+        "Select source weight 7 in the only 32-weight affine group.",
+        "Use FP16 d and m; quantization selects lane 7’s unsigned five-bit code.",
+        [
+          access("d", "0", "all 16 bits", "read the affine step"),
+          access("m", "0", "all 16 bits", "read the shared minimum"),
+          access("qs", "7", "bits 0…3", "take code bits 0…3"),
+          access("qh", "0", "bit 7", "take code bit 4")
+        ],
+        "Join the qh bit and qs nibble, then compute w′ = d × join(qh, qs) + m.",
+        ["w′"],
+        ["d", "m", "join(qh, qs)"],
+        ["d", "m", "join(qh, qs)"],
+        ["w′", "d", "join(qh, qs)", "m"]
+      );
+    case "Q8_0":
+      return worked(
+        0,
+        11,
+        11,
+        "Select source weight 11 in the only 32-weight signed group.",
+        "Use the group’s FP16 d and select signed int8 q for lane 11.",
+        [
+          access("d", "0", "all 16 bits", "read the shared scale"),
+          access("qs", "11", "all 8 bits", "read q using the declared int8 storage type")
+        ],
+        "Reconstruct lane 11 as w′ = d × int8(q).",
+        ["w′"],
+        ["d", "q"],
+        ["d", "q", "int8(…)"],
+        ["w′", "d", "q", "int8(…)"]
+      );
+    case "Q8_1":
+      return worked(
+        0,
+        13,
+        13,
+        "Select source weight 13 in the only 32-weight activation group.",
+        "Select signed q for lane 13; stored_d decodes it while stored_s carries the independently rounded encoder_d × Σq correction.",
+        [
+          access("d", "0", "all 16 bits", "read stored_d"),
+          access("s", "0", "all 16 bits", "read stored_s for the fused correction"),
+          access("qs", "13", "all 8 bits", "read lane 13’s signed q")
+        ],
+        "Reconstruct lane 13 as w′ = stored_d × q; a paired affine kernel consumes stored_s without recomputing Σq.",
+        ["w′"],
+        ["q", "stored_d", "stored_s", "encoder_d", "Σq"],
+        ["q", "stored_d", "stored_s"],
+        ["w′", "stored_d", "q", "stored_s", "Σq"]
+      );
+    case "Q8_K":
+      return worked(
+        6,
+        7,
+        103,
+        "Select weight i = 103: lane 7 of 16-weight sum group 6.",
+        "Use FP32 d and signed q[i]; group 6 also selects the auxiliary sum used by affine dot products.",
+        [
+          access("d", "0", "all 32 bits", "read the block scale"),
+          access("qs", "103", "all 8 bits", "read q[i] as signed int8"),
+          access("bsums", "6", "all 16 bits", "read the sum for codes 96…111")
+        ],
+        "Reconstruct this lane as w′[i] = d × q[i]; bsums[6] remains an auxiliary dot-product input.",
+        ["w′[i]", "i"],
+        ["d", "q[i]", "i"],
+        ["d", "q[i]", "i"],
+        ["w′[i]", "d", "q[i]", "i"]
+      );
+    case "IQ2_XXS":
+      return worked(
+        3,
+        21,
+        117,
+        "Select weight 117: lane 5 of eight-value subgrid 2 in 32-weight group 3.",
+        "Select group 3’s scale s, subgrid 2’s index and sign pattern, then lane 5 of the compiled grid.",
+        [
+          access("d", "0", "all 16 bits", "read the global scale"),
+          access("qs", "byte 26 (uint16[13] low byte)", "bits 0…7", "read subgrid 2’s index"),
+          access("qs", "group 3 metadata uint32", "bits 14…20", "read subgrid 2’s seven-bit sign index"),
+          access("qs", "group 3 metadata uint32", "bits 28…31", "read s")
+        ],
+        "Expand grid[index], select lane 5 and its sign, then compute w′ = d × (0.5 + s) × 0.25 × grid[index][lane] × sign.",
+        ["w′", "lane"],
+        ["d", "s", "index", "grid", "lane", "sign"],
+        ["d", "s", "index", "sign"],
+        ["w′", "d", "s", "grid", "index", "lane", "sign", "0.5", "0.25"]
+      );
+    case "IQ2_XS":
+      return worked(
+        5,
+        9,
+        89,
+        "Select weight 89: lane 1 of global eight-value grid word 11 in 16-weight group 5.",
+        "Select group 5’s scale s plus grid word 11’s index and sign pattern; the codebook entry remains symbolic.",
+        [
+          access("d", "0", "all 16 bits", "read the global scale"),
+          access("scales", "2", "bits 4…7", "read group 5’s s"),
+          access("qs", "11", "bits 0…8", "read the nine-bit index"),
+          access("qs", "11", "bits 9…15", "read the seven-bit sign index")
+        ],
+        "Expand grid[index], select lane 1 and its sign, then compute w′ = d × (0.5 + s) × 0.25 × grid[index][lane] × sign.",
+        ["w′", "lane"],
+        ["d", "s", "index", "grid", "lane", "sign"],
+        ["d", "s", "index", "sign"],
+        ["w′", "d", "s", "grid", "index", "lane", "sign", "0.5", "0.25"]
+      );
+    case "IQ3_XXS":
+      return worked(
+        4,
+        11,
+        139,
+        "Select weight 139: lane 3 of subvector 1 in 32-weight group 4.",
+        "Select group 4’s s and sign pattern, then index byte 34 for the first four-value half of that subvector.",
+        [
+          access("d", "0", "all 16 bits", "read the global scale"),
+          access("qs", "34", "bits 0…7", "read the selected four-value grid index"),
+          access("qs", "group 4 metadata uint32 at bytes 80…83", "bits 7…13", "read subvector 1’s sign index"),
+          access("qs", "group 4 metadata uint32 at bytes 80…83", "bits 28…31", "read s")
+        ],
+        "Expand grid[index], take lane 3 and its sign, then compute w′ = d × (0.5 + s) × 0.5 × grid[index][lane] × sign.",
+        ["w′", "lane"],
+        ["d", "s", "index", "grid", "lane", "sign"],
+        ["d", "s", "index", "sign"],
+        ["w′", "d", "s", "grid", "index", "lane", "sign", "0.5"]
+      );
+    case "IQ1_S":
+      return worked(
+        5,
+        22,
+        182,
+        "Select i = 182: lane 6 of subgrid 2 in 32-weight group 5.",
+        "Select index, s, and δ for group 5; signedGrid[index] is the compiled eight-value entry.",
+        [
+          access("d", "0", "all 16 bits", "read the global scale"),
+          access("qs", "22", "bits 0…7", "read the low eight index bits"),
+          access("qh", "5", "bits 6…8", "read subgrid 2’s three index highs"),
+          access("qh", "5", "bits 12…14", "read s"),
+          access("qh", "5", "bit 15", "select the sign of δ")
+        ],
+        "Join index, take signedGrid[index][lane 6], add δ, and compute w′ = d × (2s + 1) × (signedGrid[index][lane] + δ).",
+        ["w′", "i", "group", "subgrid", "lane"],
+        ["index", "s", "δ", "signedGrid"],
+        ["d", "index", "s", "δ"],
+        ["w′", "d", "2s + 1", "signedGrid", "index", "lane", "δ"]
+      );
+    case "IQ3_S":
+      return worked(
+        2,
+        30,
+        94,
+        "Select weight 94: lane 6 of subvector 3 in 32-weight group 2.",
+        "Select group 2’s s, grid index 23 for lanes 4…7, and sign bit 6 from signs byte 11.",
+        [
+          access("d", "0", "all 16 bits", "read the global scale"),
+          access("scales", "1", "bits 0…3", "read group 2’s s"),
+          access("qs", "23", "bits 0…7", "read the low eight index bits"),
+          access("qh", "2", "bit 7", "read index 23’s high bit"),
+          access("signs", "11", "bit 6", "read the selected lane’s sign")
+        ],
+        "Join index, take the selected compiled grid lane and sign, then compute w′ = d × (1 + 2s) × grid[index][lane] × sign.",
+        ["w′", "lane"],
+        ["d", "s", "index", "grid", "lane", "sign"],
+        ["d", "s", "index", "sign"],
+        ["w′", "d", "1", "2", "s", "grid", "index", "lane", "sign"]
+      );
+    case "IQ2_S":
+      return worked(
+        9,
+        10,
+        154,
+        "Select weight 154: lane 2 of global eight-value grid 19 in 16-weight group 9.",
+        "Select group 9’s s, grid 19’s ten-bit index, and its explicit sign mask; the grid value stays symbolic.",
+        [
+          access("d", "0", "all 16 bits", "read the global scale"),
+          access("scales", "4", "bits 4…7", "read group 9’s s"),
+          access("qs", "19", "bits 0…7", "read the low index byte"),
+          access("qh", "4", "bits 6…7", "read grid 19’s two index highs"),
+          access("qs", "51", "bit 2", "read lane 2’s sign from the sign-mask region")
+        ],
+        "Join index, select grid[index][lane 2] and sign, then compute w′ = d × (0.5 + s) × 0.25 × grid[index][lane] × sign.",
+        ["w′", "lane"],
+        ["d", "s", "index", "grid", "lane", "sign"],
+        ["d", "s", "index", "sign"],
+        ["w′", "d", "s", "grid", "index", "lane", "sign", "0.5", "0.25"]
+      );
+    case "IQ4_NL":
+      return worked(
+        0,
+        25,
+        25,
+        "Select source weight 25 in the only 32-weight nonlinear group.",
+        "Use FP16 d and select the nearest compiled nonlinearLevel through lane 25’s nibble.",
+        [
+          access("d", "0", "all 16 bits", "read the shared scale"),
+          access("qs", "9", "bits 4…7", "read lane 25’s nibble")
+        ],
+        "Use nibble as the compiled nonlinearLevel index, then compute w′ = d × nonlinearLevel[nibble].",
+        ["w′"],
+        ["d", "nibble", "nonlinearLevel"],
+        ["d", "nibble"],
+        ["w′", "d", "nonlinearLevel", "nibble"]
+      );
+    case "IQ4_XS":
+      return worked(
+        6,
+        27,
+        219,
+        "Select weight 219: lane 27 in 32-weight signed-scale group 6.",
+        "Select group 6’s six-bit ls and lane 27’s nonlinear table nibble.",
+        [
+          access("d", "0", "all 16 bits", "read the global scale"),
+          access("scales_l", "3", "bits 0…3", "read ls bits 0…3 for group 6"),
+          access("scales_h", "0", "bits 12…13", "read ls bits 4…5 for group 6"),
+          access("qs", "107", "bits 4…7", "read lane 27’s nibble")
+        ],
+        "Join ls, subtract its fixed bias, look up nonlinearLevel[nibble], and compute w′ = d × (ls − 32) × nonlinearLevel[nibble].",
+        ["w′"],
+        ["d", "ls", "nibble", "nonlinearLevel"],
+        ["d", "ls", "nibble"],
+        ["w′", "d", "ls", "32", "nonlinearLevel", "nibble"]
+      );
+    case "IQ1_M":
+      return worked(
+        10,
+        5,
+        165,
+        "Select weight 165: lane 5 of eight-value vector 20 in local-scale group 10.",
+        "Select vector 20’s index and δ plus group 10’s s; embedded_d is assembled once for the block.",
+        [
+          access("scales", "uint16 views 0…3", "bits 12…15 of each", "join the four nibbles into embedded_d"),
+          access("scales", "uint16 view 2", "bits 6…8", "read group 10’s s"),
+          access("qs", "20", "bits 0…7", "read the low index bits"),
+          access("qh", "10", "bits 0…2", "read vector 20’s index highs"),
+          access("qh", "10", "bit 3", "select δ")
+        ],
+        "Join index, select signedGrid[index][lane 5] and δ, then compute w′ = embedded_d × (2s + 1) × (signedGrid[index][lane] + δ).",
+        ["w′", "lane"],
+        ["embedded_d", "s", "index", "signedGrid", "δ"],
+        ["embedded_d", "s", "index", "δ"],
+        ["w′", "embedded_d", "2s + 1", "signedGrid", "index", "lane", "δ"]
+      );
+    case "TQ1_0":
+      return worked(
+        0,
+        137,
+        137,
+        "Select source weight 137 in the single 256-weight ternary range.",
+        "Quantization selects base3Digit 0, 1, or 2 for lane 137.",
+        [
+          access("d", "0", "all 16 bits", "read the trailing shared magnitude"),
+          access("qs", "9", "interleaved trit position 4", "compute q = uint8(qs[9] × 3⁴), then base3Digit = (uint16(q) × 3) >> 8")
+        ],
+        "Remove the ternary storage bias and reconstruct w′ = d × (base3Digit − 1).",
+        ["w′"],
+        ["base3Digit"],
+        ["d", "base3Digit"],
+        ["w′", "d", "base3Digit", "1"]
+      );
+    case "TQ2_0":
+      return worked(
+        0,
+        137,
+        137,
+        "Select source weight 137 in the single 256-weight ternary range.",
+        "Quantization selects twoBitCode 0, 1, or 2; binary 11 remains unused.",
+        [
+          access("d", "0", "all 16 bits", "read the trailing shared magnitude"),
+          access("qs", "41", "bits 0…1", "extract lane 137 from the second 32-byte interleaved plane")
+        ],
+        "Remove the ternary storage bias and reconstruct w′ = d × (twoBitCode − 1).",
+        ["w′"],
+        ["twoBitCode"],
+        ["d", "twoBitCode"],
+        ["w′", "d", "twoBitCode", "1"]
+      );
+    case "MXFP4":
+      return worked(
+        0,
+        21,
+        21,
+        "Select source weight 21 in the only 32-weight microscale group.",
+        "Select shared exponent e and lane 21’s signed E2M1 nibble.",
+        [
+          access("e", "0", "all 8 bits", "read the E8M0 exponent code"),
+          access("qs", "5", "bits 4…7", "read lane 21’s nibble")
+        ],
+        "Decode E8M0_HALF(e), look up doubledE2M1[nibble], and compute w′ = E8M0_HALF(e) × doubledE2M1[nibble].",
+        ["w′"],
+        ["e", "nibble"],
+        ["e", "nibble"],
+        ["w′", "E8M0_HALF(e)", "e", "doubledE2M1", "nibble"]
+      );
+    case "NVFP4":
+      return worked(
+        2,
+        11,
+        43,
+        "Select weight 43: lane 11 in 16-weight local-scale group 2.",
+        "Select d[group] and lane 11’s signed E2M1 nibble.",
+        [
+          access("d", "2", "all 8 bits", "read group 2’s UE4M3 scale code"),
+          access("qs", "19", "bits 4…7", "read group-local lane 11’s nibble")
+        ],
+        "Decode UE4M3(d[group]), look up doubledE2M1[nibble], and compute w′ = UE4M3(d[group]) × doubledE2M1[nibble].",
+        ["w′", "group"],
+        ["d[group]", "group", "nibble"],
+        ["d[group]", "group", "nibble"],
+        ["w′", "UE4M3(…)", "d[group]", "group", "doubledE2M1", "nibble"]
+      );
+    case "Q1_0":
+      return worked(
+        0,
+        77,
+        77,
+        "Select source weight 77 in the only 128-weight magnitude group.",
+        "Use FP16 d and select signBit for lane 77.",
+        [
+          access("d", "0", "all 16 bits", "read the shared positive magnitude"),
+          access("qs", "9", "bit 5", "read lane 77’s LSB-first signBit")
+        ],
+        "Select the +d / −d level directly from signBit to produce w′.",
+        ["w′"],
+        ["d", "signBit"],
+        ["d", "signBit"],
+        ["w′", "signBit", "+d / −d", "d"]
+      );
+    case "Q2_0":
+      return worked(
+        0,
+        46,
+        46,
+        "Select source weight 46 in the only 64-weight four-level group.",
+        "Use FP16 d and select lane 46’s biased twoBitCode.",
+        [
+          access("d", "0", "all 16 bits", "read the shared magnitude"),
+          access("qs", "11", "bits 4…5", "read lane 46’s twoBitCode")
+        ],
+        "Remove the implicit bias and reconstruct w′ = d × (twoBitCode − 1).",
+        ["w′"],
+        ["d", "twoBitCode"],
+        ["d", "twoBitCode"],
+        ["w′", "d", "twoBitCode", "1"]
+      );
+    default:
+      throw new Error(`Missing worked GGUF quantization example for ${dtype}`);
+  }
+}
+
+function worked(
+  group: number,
+  lane: number,
+  weight: number,
+  source: string,
+  metadata: string,
+  accesses: readonly [
+    GgufQuantWorkedStorageAccess,
+    ...GgufQuantWorkedStorageAccess[]
+  ],
+  reconstruction: string,
+  sourceSymbols: readonly string[],
+  metadataSymbols: readonly string[],
+  storageSymbols: readonly string[],
+  reconstructionSymbols: readonly string[]
+): GgufQuantWorkedExample {
+  return {
+    selection: { group, lane, weight },
+    stages: [
+      {
+        kind: "source",
+        title: "Select one source lane",
+        detail: source,
+        symbols: Array.from(
+          new Set([
+            "w[i]",
+            "i",
+            "group",
+            "lane",
+            ...sourceSymbols.filter(
+              (symbol) => symbol !== "w′" && symbol !== "w′[i]"
+            )
+          ])
+        )
+      },
+      { kind: "metadata", title: "Select metadata and code", detail: metadata, symbols: metadataSymbols },
+      {
+        kind: "storage",
+        title: "Extract exact record bits",
+        detail: "Read only the named record fields and packed slices for this lane.",
+        symbols: storageSymbols,
+        accesses
+      },
+      {
+        kind: "reconstruction",
+        title: "Reconstruct the selected value",
+        detail: reconstruction,
+        symbols: reconstructionSymbols
+      }
+    ]
+  };
+}
+
+function contractSymbols(
+  dtype: string,
+  values: number,
+  groupCount: number,
+  groupValues: number
+): readonly GgufQuantSymbol[] {
+  const specific = symbolOrigins(dtype);
+  const common = [
+    symbol("w[i]", "original source weight at index i", "encoder input; it is not stored in the record"),
+    symbol("i", "weight index inside the fixed record", `0…${values - 1} in source order`),
+    symbol("group", "metadata-sharing group index", `${groupCount} group${groupCount === 1 ? "" : "s"} numbered 0…${groupCount - 1}`),
+    symbol("lane", "position inside the selected group", `0…${groupValues - 1}; i = group×${groupValues} + lane`)
+  ];
+  const existing = new Set(specific.map(({ symbol: name }) => name));
+  return [...common.filter(({ symbol: name }) => !existing.has(name)), ...specific];
+}
+
+function access(
+  field: string,
+  index: string,
+  bits: string,
+  action: string
+): GgufQuantWorkedStorageAccess {
+  return { field, index, bits, action };
 }
 
 function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {

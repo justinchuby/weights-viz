@@ -64,6 +64,13 @@ export interface KQuantContractDetails {
   codes: readonly string[];
   packing: readonly string[];
   terms: readonly KQuantTermDefinition[];
+  derivation: readonly KQuantDerivationStep[];
+}
+
+export interface KQuantDerivationStep {
+  title: string;
+  expression: string;
+  detail: string;
 }
 
 export interface KQuantSubBlockStorage {
@@ -955,6 +962,105 @@ function kQuantFieldOffset(
     .reduce((offset, section) => offset + section.bytes, 0);
 }
 
+function kQuantParameterDerivation(
+  dtype: KQuantLayout["dtype"]
+): KQuantDerivationStep[] {
+  const layout = K_QUANT_LAYOUTS[dtype];
+  const firstMetadata = kQuantSubBlockStorage(dtype, 0).metadata.join("; ");
+
+  if (layout.minBits !== undefined) {
+    const max = 2 ** layout.scaleBits - 1;
+    const example = dtype === "Q4_K"
+      ? "Example: a[0]=0.42 and d=0.01 give s[0]=42; b[0]=0.17 and dmin=0.005 give m[0]=34."
+      : "The rounding error is why decoded localScale/localMin can differ slightly from the encoder-only a/b values.";
+    return [
+      {
+        title: "1. Fit this sub-block",
+        expression: "w[g,l] ≈ a[g] × q[g,l] − b[g]",
+        detail: "The encoder searches a local real-valued scale a[g], positive offset magnitude b[g], and allowed integer q codes that minimize reconstruction error. a[g] and b[g] are temporary and are not file fields."
+      },
+      {
+        title: "2. Choose shared FP16 steps",
+        expression: "a[g] ≈ d × s[g] · b[g] ≈ dmin × m[g]",
+        detail: "Across all sub-blocks, the encoder chooses global steps d and dmin. Only d and dmin are stored directly as FP16 fields."
+      },
+      {
+        title: "3. Make stored integers",
+        expression: `s[g] = clamp(round(a[g] / d), 0, ${max}) · m[g] = clamp(round(b[g] / dmin), 0, ${max})`,
+        detail: `${example} s[g] and m[g] are integers; neither is another floating-point scale.`
+      },
+      {
+        title: "4. Pack s[g] and m[g]",
+        expression: "s[g], m[g] → scales[] bits",
+        detail: `For g=0: ${firstMetadata}. The exact locations for every g appear in the sub-block map below.`
+      },
+      {
+        title: "5. Recreate local parameters",
+        expression: "localScale[g] = d × s[g] · localMin[g] = dmin × m[g]",
+        detail: "The decoder unpacks s[g] and m[g], rebuilds the two local real values, then combines them with each unpacked q[g,l]."
+      }
+    ];
+  }
+
+  if (dtype === "Q3_K") {
+    return [
+      {
+        title: "1. Fit this sub-block",
+        expression: "w[g,l] ≈ a[g] × q[g,l]",
+        detail: "The encoder searches a local real-valued scale a[g] and signed q codes that minimize reconstruction error. a[g] is temporary and is not stored."
+      },
+      {
+        title: "2. Choose one FP16 step",
+        expression: "a[g] ≈ d × (s[g] − 32)",
+        detail: "One global FP16 d is shared by all 16 sub-blocks."
+      },
+      {
+        title: "3. Make the biased integer",
+        expression: "s[g] = clamp(round(a[g] / d) + 32, 0, 63)",
+        detail: "s[g] is the stored unsigned six-bit integer. The fixed 32 bias converts it back to a signed local-scale integer."
+      },
+      {
+        title: "4. Pack s[g]",
+        expression: "six bits of s[g] → scales[]",
+        detail: `For g=0: ${firstMetadata}.`
+      },
+      {
+        title: "5. Recreate the local scale",
+        expression: "localScale[g] = d × (s[g] − 32)",
+        detail: "The decoder subtracts the format bias after unpacking s[g]; there is no stored b[g] or m[g] in Q3_K."
+      }
+    ];
+  }
+
+  return [
+    {
+      title: "1. Fit this sub-block",
+      expression: "w[g,l] ≈ a[g] × q[g,l]",
+      detail: "The encoder searches a local real-valued scale a[g] and signed q codes that minimize reconstruction error. a[g] is temporary and is not stored."
+    },
+    {
+      title: "2. Choose one FP16 step",
+      expression: "a[g] ≈ d × signed_s[g]",
+      detail: "One global FP16 d is shared by all 16 sub-blocks."
+    },
+    {
+      title: "3. Make the stored integer",
+      expression: "signed_s[g] = clamp(round(a[g] / d), −128, 127)",
+      detail: "Q6_K stores the sign directly in an int8; it does not use Q3_K's +32 bias."
+    },
+    {
+      title: "4. Store signed_s[g]",
+      expression: "signed_s[g] → scales[g]",
+      detail: `For g=0: ${firstMetadata}.`
+    },
+    {
+      title: "5. Recreate the local scale",
+      expression: "localScale[g] = d × signed_s[g]",
+      detail: "The decoder multiplies the shared FP16 step by the stored int8 before applying each q[g,l]."
+    }
+  ];
+}
+
 export function kQuantContractDetails(
   dtype: KQuantLayout["dtype"]
 ): KQuantContractDetails {
@@ -990,6 +1096,7 @@ export function kQuantContractDetails(
 
   return {
     metadata,
+    derivation: kQuantParameterDerivation(dtype),
     codes: [
       `q is one logical integer code for one weight. qs is a physical byte array that packs many q codes together; extract q's bits from qs (and any companion high-bit field) before decoding.`,
       `${layout.codeBits} bits per q allow the ${qRange} decode range used by ${dtype}.`,
@@ -1004,12 +1111,12 @@ export function kQuantContractDetails(
       term("lane / l", "position inside sub-block g", `0…${layout.valuesPerSubBlock - 1}; source index i = g×${layout.valuesPerSubBlock} + l`),
       term("w[i]", "original source floating-point weight", "encoder input; it is not present in the stored record"),
       term("w′[i]", "reconstructed approximation of w[i]", "decoder output produced from metadata and q"),
-      term("a[g]", "ideal local scale fitted to sub-block g", "temporary encoder result; quantized into s[g], not stored directly"),
+      term("a[g]", "encoder-only local scale fitted to sub-block g", "chosen with q[g,l] to minimize reconstruction error; quantized into s[g], never written to the record"),
       ...(affine
         ? [
-            term("b[g]", "ideal positive minimum magnitude for sub-block g", "temporary encoder result; quantized into m[g], not stored directly"),
+            term("b[g]", "encoder-only positive offset magnitude for sub-block g", "chosen with a[g] and q[g,l] to minimize reconstruction error; quantized into m[g], never written to the record"),
             term("dmin / globalMin", "global minimum step", "FP16 record field dmin"),
-            term("m[g] / subMin", "local minimum integer", `the ${layout.minBits}-bit m[g] packed in scales; reconstructed minimum is dmin×m[g]`)
+            term("m[g] / subMin", "stored local-minimum integer", `m[g]=clamp(round(b[g]/dmin)); its ${layout.minBits} bits are packed in scales[]; localMin[g]=dmin×m[g]`)
           ]
         : []),
       term("d / globalScale", "global scale step", "FP16 record field d"),
@@ -1092,12 +1199,12 @@ function kQuantPackingRules(
 
 function localScaleTermSource(dtype: KQuantLayout["dtype"]): string {
   if (dtype === "Q3_K") {
-    return "six packed bits in scales reconstruct d×(s[g]−32)";
+    return "s[g]=clamp(round(a[g]/d)+32); its six bits are packed in scales[]; localScale=d×(s[g]−32)";
   }
   if (dtype === "Q6_K") {
-    return "record field scales[g] is signed int8; localScale=d×signed_s[g]";
+    return "signed_s[g]=clamp(round(a[g]/d)); record field scales[g] stores that int8; localScale=d×signed_s[g]";
   }
-  return `the ${K_QUANT_LAYOUTS[dtype].scaleBits}-bit s[g] packed in scales; localScale=d×s[g]`;
+  return `s[g]=clamp(round(a[g]/d)); its ${K_QUANT_LAYOUTS[dtype].scaleBits} bits are packed in scales[]; localScale=d×s[g]`;
 }
 
 function codeTermSource(dtype: KQuantLayout["dtype"]): string {

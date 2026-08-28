@@ -1,64 +1,57 @@
-import { Binary, Boxes, Calculator, ChevronRight, Cpu, Layers3 } from "lucide-react";
-import type { ReactNode } from "react";
+import { Binary, Boxes, Calculator, Cpu, Layers3 } from "lucide-react";
 import {
   AnimationControls,
   AnimationStepCopy,
   type AnimationStep,
   useAnimationPlayer
 } from "./DtypeAnimationPlayer";
-import { ggufQuantContract } from "./gguf-quant-contracts";
-import { ggufStorageLayout } from "./gguf-storage-layouts";
+import {
+  ggufQuantContract,
+  type GgufQuantWorkedStage
+} from "./gguf-quant-contracts";
 
 const STEPS: readonly AnimationStep[] = [
   {
-    label: "Fix the ABI scope",
-    detail:
-      "The dtype—not the file—fixes the number of weights, stored bytes, and metadata-sharing groups."
+    label: "Select a source lane",
+    detail: "Follow one concrete weight inside one fixed metadata group."
   },
   {
-    label: "Derive the metadata",
-    detail:
-      "Compute the exact block or group parameters, then round and pack them in their declared storage types."
+    label: "Select metadata and code",
+    detail: "Choose the exact shared parameters, code, and runtime table entry needed by that lane."
   },
   {
-    label: "Choose the codes",
-    detail:
-      "Map each source value or vector to the format’s real integer, ternary, floating, or codebook representation."
+    label: "Extract record bits",
+    detail: "Locate the selected data in named fields, indices, and packed bit slices."
   },
   {
-    label: "Write the physical record",
-    detail:
-      "Fields appear in a fixed order; split nibbles, bit-planes, and embedded metadata are part of the ABI."
-  },
-  {
-    label: "Decode inside the kernel",
-    detail:
-      "Reassemble one code and its exact metadata scopes, then reconstruct only the values needed by the fused operation."
+    label: "Reconstruct the value",
+    detail: "Apply the dtype’s decode rule to the selected lane; no new storage terms are introduced here."
   }
 ];
 
 export function GgufQuantContractAnimation({ dtype }: { dtype: string }) {
   const contract = ggufQuantContract(dtype);
-  const fields = ggufStorageLayout(dtype);
   const player = useAnimationPlayer(STEPS.length);
   const { step } = player;
 
-  if (!contract || !fields) return null;
+  if (!contract) return null;
 
   const bitsPerWeight = (contract.bytes * 8) / contract.values;
+  const { selection, stages } = contract.worked;
 
   return (
     <section className="wv-contract-demo">
       <header>
         <div>
-          <span>EXACT BLOCK CONTRACT</span>
+          <span>WORKED RECORD TRANSFORMATION</span>
           <h3>
             <Layers3 aria-hidden="true" />
-            Open the {dtype} record
+            Trace {dtype} weight {selection.weight}
           </h3>
           <p>
-            {contract.family}. Every field, group boundary, code rule, and
-            reconstruction step below belongs to this dtype’s fixed GGML ABI.
+            One concrete lane from source selection through packed storage to
+            reconstruction. All field names and formula terms are defined in the
+            Storage contract above.
           </p>
         </div>
         <div className="wv-contract-ratio">
@@ -79,19 +72,21 @@ export function GgufQuantContractAnimation({ dtype }: { dtype: string }) {
             <Fact label="Block" value={`${contract.values} weights`} />
             <Fact label="Record" value={`${contract.bytes} bytes`} />
             <Fact
-              label="Grouping"
-              value={
-                contract.groups.count === 1
-                  ? contract.groups.label
-                  : `${contract.groups.count} × ${contract.groups.values}`
-              }
+              label="Selected group"
+              value={`${selection.group} · ${contract.groups.label}`}
             />
-            <Fact label="Size rule" value="fixed, not configurable" />
+            <Fact
+              label="Group position"
+              value={`${selection.lane} → w[${selection.weight}]`}
+            />
           </div>
 
           <div className="wv-contract-groups" aria-label={`${dtype} group map`}>
             {Array.from({ length: contract.groups.count }, (_, group) => (
-              <span key={group}>
+              <span
+                className={group === selection.group ? "selected" : ""}
+                key={group}
+              >
                 <b>{contract.groups.count === 1 ? "block" : `g${group}`}</b>
                 <small>
                   {group * contract.groups.values}…
@@ -101,55 +96,17 @@ export function GgufQuantContractAnimation({ dtype }: { dtype: string }) {
             ))}
           </div>
 
-          <div className="wv-contract-panels">
-            <ContractPanel
-              icon={<Calculator aria-hidden="true" />}
-              title="Metadata derivation"
-              items={contract.metadata}
-              active={step === 1}
-              revealed={step >= 1}
-            />
-            <ChevronRight aria-hidden="true" />
-            <ContractPanel
-              icon={<Binary aria-hidden="true" />}
-              title="Code contract"
-              items={contract.codes}
-              active={step === 2}
-              revealed={step >= 2}
-            />
-          </div>
-
-          <div className={`wv-contract-layout${step === 3 ? " active" : ""}`}>
-            <header>
-              <Boxes aria-hidden="true" />
-              <span>
-                <strong>Physical {dtype} record</strong>
-                <small>exact field order · {contract.bytes} bytes total</small>
-              </span>
-            </header>
-            <div className="wv-contract-field-strip">
-              {fields.map((field) => (
-                <span key={field.name} style={{ flexGrow: field.bytes }}>
-                  <strong>{field.name}</strong>
-                  <small>
-                    {field.type}[{field.count}] · {field.bytes} B
-                  </small>
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className={`wv-contract-decode${step === 4 ? " active" : ""}`}>
-            <div>
-              <Cpu aria-hidden="true" />
-              <span>
-                <small>exact reconstruction</small>
-                <code>{contract.decode}</code>
-              </span>
-            </div>
-            <ChevronRight aria-hidden="true" />
-            <p>{contract.runtime}</p>
-          </div>
+          <ol className="wv-contract-worked" aria-label={`${dtype} worked transformation`}>
+            {stages.map((stage, index) => (
+              <WorkedStage
+                active={step === index}
+                complete={step >= index}
+                key={stage.kind}
+                number={index + 1}
+                stage={stage}
+              />
+            ))}
+          </ol>
         </div>
       </div>
 
@@ -176,34 +133,63 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ContractPanel({
-  icon,
-  title,
-  items,
+function WorkedStage({
   active,
-  revealed
+  complete,
+  number,
+  stage
 }: {
-  icon: ReactNode;
-  title: string;
-  items: readonly string[];
   active: boolean;
-  revealed: boolean;
+  complete: boolean;
+  number: number;
+  stage: GgufQuantWorkedStage;
 }) {
   return (
-    <article
-      className={`${active ? "active" : ""}${revealed ? " revealed" : ""}`}
-    >
+    <li className={`${complete ? "complete" : ""}${active ? " active" : ""}`}>
       <header>
-        {icon}
-        <strong>{title}</strong>
+        <span>{number}</span>
+        {stageIcon(stage.kind)}
+        <strong>{stage.title}</strong>
+        <small>{stage.kind}</small>
       </header>
-      <ol>
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ol>
-    </article>
+      <p>{stage.detail}</p>
+      {stage.kind === "storage" && (
+        <div className="wv-contract-accesses">
+          {stage.accesses.map((item) => (
+            <span key={`${item.field}-${item.index}-${item.bits}`}>
+              <code>
+                {item.field}[{item.index}] · {item.bits}
+              </code>
+              <small>{item.action}</small>
+            </span>
+          ))}
+        </div>
+      )}
+      {stage.symbols.length > 0 && (
+        <footer>
+          <small>terms defined above</small>
+          <div>
+            {stage.symbols.map((symbol) => (
+              <code key={symbol}>{symbol}</code>
+            ))}
+          </div>
+        </footer>
+      )}
+    </li>
   );
+}
+
+function stageIcon(kind: GgufQuantWorkedStage["kind"]) {
+  switch (kind) {
+    case "source":
+      return <Calculator aria-hidden="true" />;
+    case "metadata":
+      return <Binary aria-hidden="true" />;
+    case "storage":
+      return <Boxes aria-hidden="true" />;
+    case "reconstruction":
+      return <Cpu aria-hidden="true" />;
+  }
 }
 
 function formatDecimal(value: number): string {
