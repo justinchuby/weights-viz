@@ -440,7 +440,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         [
           access("d", "0", "all 16 bits", "read the shared signed scale"),
           access("qs", "2", "bits 4…7", "take storedCode bits 0…3"),
-          access("qh", "0", "bit 18", "take lane 18’s storedCode bit 4")
+          access("qh", "little-endian uint32 view of bytes 0…3", "bit 18", "take lane 18’s storedCode bit 4")
         ],
         "Join the qh bit above the qs nibble, then compute w′ = d × (storedCode − 16).",
         ["w′"],
@@ -459,7 +459,7 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
           access("d", "0", "all 16 bits", "read the affine step"),
           access("m", "0", "all 16 bits", "read the shared minimum"),
           access("qs", "7", "bits 0…3", "take code bits 0…3"),
-          access("qh", "0", "bit 7", "take code bit 4")
+          access("qh", "little-endian uint32 view of bytes 0…3", "bit 7", "take code bit 4")
         ],
         "Join the qh bit and qs nibble, then compute w′ = d × join(qh, qs) + m.",
         ["w′"],
@@ -893,7 +893,7 @@ function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
         symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
         symbol("storedCode", "unsigned five-bit code", "four low bits from qs joined with bit i from qh"),
         symbol("join(qh, qs)", "five-bit assembly operation", "take the lane’s qh bit as bit 4 and its qs nibble as bits 0…3"),
-        symbol("qh", "high-code bit plane", "uint32 record field qh"),
+        symbol("qh", "high-code bit plane", "the four qh bytes interpreted as one little-endian uint32"),
         symbol("qs", "low four code bits", "the lane’s nibble in record field qs"),
         symbol("d", "shared signed scale", "FP16 record field d"),
         symbol("16", "implicit code bias", "fixed Q5_0 format constant; it occupies no record bytes")

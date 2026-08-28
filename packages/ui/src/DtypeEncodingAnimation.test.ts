@@ -444,7 +444,7 @@ describe("GGUF physical animation layouts", () => {
     if (storage?.kind !== "storage") throw new Error("Missing Q5_0 storage stage");
     expect(storage.accesses).toContainEqual({
       field: "qh",
-      index: "0",
+      index: "little-endian uint32 view of bytes 0…3",
       bits: "bit 18",
       action: "take lane 18’s storedCode bit 4"
     });
