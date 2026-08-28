@@ -20,7 +20,8 @@ import {
   kQuantCodeExample,
   kQuantContractDetails,
   kQuantFieldMeaning,
-  kQuantMetadataBytes
+  kQuantMetadataBytes,
+  kQuantSubBlockStorage
 } from "./KQuantAnimation";
 import { ggufStorageLayout } from "./gguf-storage-layouts";
 import { createDtypeEducation } from "./dtype-education";
@@ -154,6 +155,21 @@ describe("K-quant animation layouts", () => {
       scaleBits: 6,
       minBits: 6
     });
+  });
+
+  it("maps Q4_K logical sub-blocks back to shared physical fields", () => {
+    expect(kQuantSubBlockStorage("Q4_K", 2)).toEqual({
+      metadata: [
+        "s[2]: scales[2] bits 0…5 (record byte 6)",
+        "m[2]: scales[6] bits 0…5 (record byte 10)"
+      ],
+      codes: [
+        "q low 4: qs[32…63] low bits 0…3 (record bytes 48…79)"
+      ]
+    });
+    expect(kQuantSubBlockStorage("Q4_K", 3).codes).toEqual([
+      "q low 4: qs[32…63] high bits 4…7 (record bytes 48…79)"
+    ]);
   });
 
   it.each(Object.keys(K_QUANT_LAYOUTS) as Array<keyof typeof K_QUANT_LAYOUTS>)(

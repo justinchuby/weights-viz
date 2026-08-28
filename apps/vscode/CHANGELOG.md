@@ -28,7 +28,8 @@
   ranges, and bit-layout rules into the top Storage contract; animations now
   reference that primer and focus on transformations.
 - Draw each K-quant physical super-block record together with its logical
-  sub-block ranges, and enlarge Atlas and lesson typography for readability.
+  sub-block ranges and exact shared-array bit locations, distinguish one
+  logical `q` from the packed `qs` byte array, and enlarge lesson typography.
 
 ## 0.3.0
 

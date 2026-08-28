@@ -66,6 +66,11 @@ export interface KQuantContractDetails {
   terms: readonly KQuantTermDefinition[];
 }
 
+export interface KQuantSubBlockStorage {
+  metadata: readonly string[];
+  codes: readonly string[];
+}
+
 export const K_QUANT_LAYOUTS: Record<KQuantLayout["dtype"], KQuantLayout> = {
   Q2_K: {
     dtype: "Q2_K",
@@ -655,6 +660,86 @@ export function kQuantMetadataBytes(
   ];
 }
 
+export function kQuantSubBlockStorage(
+  dtype: KQuantLayout["dtype"],
+  group: number
+): KQuantSubBlockStorage {
+  const layout = K_QUANT_LAYOUTS[dtype];
+  if (!Number.isInteger(group) || group < 0 || group >= layout.subBlocks) {
+    throw new RangeError(`Invalid ${dtype} sub-block ${group}`);
+  }
+
+  const scalesOffset = kQuantFieldOffset(dtype, "scales");
+  const metadata = kQuantMetadataBytes(dtype, group).flatMap(({ index, segments }) =>
+    segments.map(
+      ({ label, from, to }) =>
+        `${label}: scales[${index}] bits ${from}…${to} (record byte ${scalesOffset + index})`
+    )
+  );
+
+  if (dtype === "Q2_K") {
+    const base = Math.floor(group / 8) * 32 + (group % 2) * 16;
+    const bit = 2 * Math.floor((group % 8) / 2);
+    const offset = kQuantFieldOffset(dtype, "qs");
+    return {
+      metadata,
+      codes: [
+        `q codes: qs[${base}…${base + 15}] bits ${bit}…${bit + 1} (record bytes ${offset + base}…${offset + base + 15})`
+      ]
+    };
+  }
+
+  if (dtype === "Q3_K") {
+    const qsBase = Math.floor(group / 8) * 32 + (group % 2) * 16;
+    const qsBit = 2 * Math.floor((group % 8) / 2);
+    const hmaskBase = (group % 2) * 16;
+    const hmaskBit = Math.floor(group / 2);
+    const qsOffset = kQuantFieldOffset(dtype, "qs");
+    const hmaskOffset = kQuantFieldOffset(dtype, "hmask");
+    return {
+      metadata,
+      codes: [
+        `q low 2: qs[${qsBase}…${qsBase + 15}] bits ${qsBit}…${qsBit + 1} (record bytes ${qsOffset + qsBase}…${qsOffset + qsBase + 15})`,
+        `q high mask: hmask[${hmaskBase}…${hmaskBase + 15}] bit ${hmaskBit} (record bytes ${hmaskOffset + hmaskBase}…${hmaskOffset + hmaskBase + 15})`
+      ]
+    };
+  }
+
+  if (dtype === "Q4_K" || dtype === "Q5_K") {
+    const qsBase = 32 * Math.floor(group / 2);
+    const nibble = group % 2 === 0 ? "low bits 0…3" : "high bits 4…7";
+    const qsOffset = kQuantFieldOffset(dtype, "qs");
+    const codes = [
+      `q low 4: qs[${qsBase}…${qsBase + 31}] ${nibble} (record bytes ${qsOffset + qsBase}…${qsOffset + qsBase + 31})`
+    ];
+    if (dtype === "Q5_K") {
+      const qhOffset = kQuantFieldOffset(dtype, "qh");
+      codes.push(
+        `q bit 4: qh[0…31] bit ${group} (record bytes ${qhOffset}…${qhOffset + 31})`
+      );
+    }
+    return { metadata, codes };
+  }
+
+  const half = Math.floor(group / 8);
+  const withinHalf = group % 8;
+  const pair = Math.floor(withinHalf / 2);
+  const laneBase = (withinHalf % 2) * 16;
+  const qlBase = half * 64 + (pair % 2) * 32 + laneBase;
+  const qhBase = half * 32 + laneBase;
+  const nibble = pair >= 2 ? "high bits 4…7" : "low bits 0…3";
+  const qhBit = 2 * pair;
+  const qlOffset = kQuantFieldOffset(dtype, "ql");
+  const qhOffset = kQuantFieldOffset(dtype, "qh");
+  return {
+    metadata,
+    codes: [
+      `q low 4: ql[${qlBase}…${qlBase + 15}] ${nibble} (record bytes ${qlOffset + qlBase}…${qlOffset + qlBase + 15})`,
+      `q high 2: qh[${qhBase}…${qhBase + 15}] bits ${qhBit}…${qhBit + 1} (record bytes ${qhOffset + qhBase}…${qhOffset + qhBase + 15})`
+    ]
+  };
+}
+
 function metadataEncoding(dtype: KQuantLayout["dtype"]): string {
   if (dtype === "Q2_K") return "one byte: mmmm ssss";
   if (dtype === "Q3_K") return "6 bits assembled from two bytes";
@@ -906,7 +991,8 @@ export function kQuantContractDetails(
   return {
     metadata,
     codes: [
-      `A code q is the small integer level chosen for one source weight; ${layout.codeBits} bits allow the ${qRange} decode range used by ${dtype}.`,
+      `q is one logical integer code for one weight. qs is a physical byte array that packs many q codes together; extract q's bits from qs (and any companion high-bit field) before decoding.`,
+      `${layout.codeBits} bits per q allow the ${qRange} decode range used by ${dtype}.`,
       "The original floating-point weight is not stored. Its q code plus the shared/local metadata reconstruct an approximation w′.",
       codeStorageRule(dtype)
     ],
@@ -940,7 +1026,7 @@ export function kQuantContractDetails(
 }
 
 export function kQuantFieldMeaning(name: string): string {
-  if (name === "qs") return "packed quantized symbols (the q codes)";
+  if (name === "qs") return "byte array packing many per-weight q codes";
   if (name === "ql") return "packed low bits of each q code";
   if (name === "qh") return "packed high bits of each q code";
   if (name === "hmask") return "high-bit mask completing each signed q code";

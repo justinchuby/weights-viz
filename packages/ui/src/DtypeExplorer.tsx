@@ -31,6 +31,7 @@ import {
   K_QUANT_LAYOUTS,
   kQuantContractDetails,
   kQuantFieldMeaning,
+  kQuantSubBlockStorage,
   KQuantAnimation
 } from "./KQuantAnimation";
 import {
@@ -496,31 +497,35 @@ function BlockDiagram({
       {kLayout ? (
         <section className="wv-storage-subblocks">
           <header>
-            <strong>Logical sub-blocks inside this super-block</strong>
-            <small>each sub-block selects its own local metadata and q codes from the fields above</small>
+            <strong>Zoomed logical sub-blocks</strong>
+            <small>not contiguous byte slices: each view gathers bits from the physical fields above</small>
           </header>
           <div>
             {Array.from({ length: kLayout.subBlocks }, (_, group) => {
               const start = group * kLayout.valuesPerSubBlock;
               const end = start + kLayout.valuesPerSubBlock - 1;
-              const localScale = dtype === "Q6_K" ? `signed_s[${group}]` : `s[${group}]`;
-              const localMetadata = kLayout.minBits
-                ? `${localScale}, m[${group}]`
-                : localScale;
+              const storage = kQuantSubBlockStorage(kLayout.dtype, group);
               return (
                 <span key={group}>
-                  <strong>sub-block {group}</strong>
-                  <small>weights {start}…{end}</small>
-                  <code>metadata: {localMetadata}</code>
-                  <code>codes: q[{start}…{end}]</code>
+                  <strong>sub-block {group}: weights {start}…{end}</strong>
+                  <small>logical q[{start}…{end}] is reconstructed from:</small>
+                  <b>local metadata</b>
+                  {storage.metadata.map((location) => (
+                    <code key={location}>{location}</code>
+                  ))}
+                  <b>packed q bits</b>
+                  {storage.codes.map((location) => (
+                    <code key={location}>{location}</code>
+                  ))}
                 </span>
               );
             })}
           </div>
           <p>
-            These are logical ranges within the one record above, not separate
-            byte records. The exact packing rules below locate their metadata
-            and codes inside the shared arrays.
+            Each <code>q[i]</code> is one decoded integer code. <code>qs</code>{" "}
+            is the stored byte array containing packed bits for many q values;
+            a sub-block view gathers its q bits and metadata from the listed
+            locations rather than enlarging one contiguous record segment.
           </p>
         </section>
       ) : (

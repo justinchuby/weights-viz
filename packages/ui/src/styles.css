@@ -391,12 +391,14 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-storage-subblocks > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .wv-storage-subblocks > header strong { font-size: 13px; }
 .wv-storage-subblocks > header small { color: var(--wv-faint); font: 11px ui-monospace, monospace; }
-.wv-storage-subblocks > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.wv-storage-subblocks > div > span { display: grid; gap: 4px; min-width: 0; padding: 9px; border-left: 3px solid var(--wv-accent); border-radius: var(--wv-small-radius); background: color-mix(in srgb, var(--wv-accent) 8%, var(--wv-surface-alt)); }
+.wv-storage-subblocks > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.wv-storage-subblocks > div > span { display: grid; align-content: start; gap: 4px; min-width: 0; padding: 10px; border-left: 3px solid var(--wv-accent); border-radius: var(--wv-small-radius); background: color-mix(in srgb, var(--wv-accent) 8%, var(--wv-surface-alt)); }
 .wv-storage-subblocks > div > span strong { font-size: 12px; }
 .wv-storage-subblocks > div > span small { color: var(--wv-muted); }
-.wv-storage-subblocks > div > span code { color: var(--wv-accent); font: 700 11px/1.35 ui-monospace, monospace; white-space: nowrap; }
+.wv-storage-subblocks > div > span b { margin-top: 4px; color: var(--wv-text); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.wv-storage-subblocks > div > span code { color: var(--wv-accent); font: 700 11px/1.4 ui-monospace, monospace; overflow-wrap: anywhere; }
 .wv-storage-subblocks > p { margin-bottom: 0; }
+.wv-storage-subblocks > p code { color: var(--wv-accent); font: 700 12px ui-monospace, monospace; }
 .wv-storage-rules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-top: 9px; }
 .wv-storage-rules > section { min-width: 0; padding: 9px 10px; border: 1px solid var(--wv-border); border-radius: var(--wv-small-radius); background: var(--wv-surface); }
 .wv-storage-rules > section > strong { font-size: 12px; }
@@ -783,7 +785,7 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
   .wv-dtype-card.wide { grid-column: auto; }
   .wv-dtype-formula { grid-template-columns: 1fr; gap: 8px; }
   .wv-storage-field-definitions, .wv-storage-term-definitions, .wv-storage-rules { grid-template-columns: 1fr; }
-  .wv-storage-subblocks > div { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wv-storage-subblocks > div { grid-template-columns: 1fr; }
   .wv-storage-vocabulary > header, .wv-storage-layout-heading, .wv-storage-subblocks > header, .wv-storage-reconstruction > header { align-items: flex-start; flex-direction: column; gap: 3px; }
   .wv-dtype-concepts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .wv-quant-columns { grid-template-columns: 1fr; }
