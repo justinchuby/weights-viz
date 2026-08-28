@@ -15,15 +15,19 @@ export interface AnimationStep {
 export function useAnimationPlayer(stepCount: number) {
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(() => !prefersReducedMotion());
+  const lastStep = Math.max(0, stepCount - 1);
 
   useEffect(() => {
     if (!playing) return;
-    const timer = window.setTimeout(
-      () => setStep((current) => (current + 1) % stepCount),
-      step === stepCount - 1 ? 3000 : 2200
-    );
+    if (step >= lastStep) {
+      setPlaying(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setStep((current) => Math.min(current + 1, lastStep));
+    }, 2200);
     return () => window.clearTimeout(timer);
-  }, [playing, step, stepCount]);
+  }, [lastStep, playing, step]);
 
   const selectStep = (nextStep: number) => {
     setStep(nextStep);
@@ -34,9 +38,18 @@ export function useAnimationPlayer(stepCount: number) {
     step,
     playing,
     selectStep,
-    togglePlaying: () => setPlaying((current) => !current),
-    previous: () => selectStep((step - 1 + stepCount) % stepCount),
-    next: () => selectStep((step + 1) % stepCount),
+    togglePlaying: () => {
+      if (playing) {
+        setPlaying(false);
+        return;
+      }
+      if (step >= lastStep) {
+        setStep(0);
+      }
+      setPlaying(true);
+    },
+    previous: () => selectStep(Math.max(0, step - 1)),
+    next: () => selectStep(Math.min(lastStep, step + 1)),
     restart: () => {
       setStep(0);
       setPlaying(!prefersReducedMotion());

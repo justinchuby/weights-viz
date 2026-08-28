@@ -16,6 +16,8 @@
   bit-plane or codebook packing, and kernel reconstruction.
 - Map selected K-quant sub-block scales and minima to their exact `scales[]`
   array indices, record byte offsets, and packed bit ranges.
+- Stop dtype lesson autoplay on its final step instead of looping; explicit
+  replay starts again from the beginning.
 
 ## 0.3.0
 
