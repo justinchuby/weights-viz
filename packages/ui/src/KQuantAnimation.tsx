@@ -29,6 +29,14 @@ export interface KQuantMetadataByte {
   }>;
 }
 
+interface KQuantMetadataExample {
+  ideal: readonly string[];
+  global: readonly string[];
+  stored: readonly string[];
+  scaleCode: number;
+  minimumCode?: number;
+}
+
 export const K_QUANT_LAYOUTS: Record<KQuantLayout["dtype"], KQuantLayout> = {
   Q2_K: {
     dtype: "Q2_K",
@@ -120,12 +128,12 @@ const STEPS: readonly AnimationStep[] = [
     detail: "Small groups get independent ideal ranges, so an outlier in one group does not flatten all 256 weights."
   },
   {
-    label: "Quantize the quantization parameters",
-    detail: "The local scales and minima are themselves compressed under one or two FP16 super-block factors."
+    label: "Turn local ranges into stored integers",
+    detail: "Divide each ideal local parameter by its global FP16 step, round it, and place the resulting small integer inside scales[]."
   },
   {
-    label: "Pack the physical record",
-    detail: "Metadata and code bit-planes occupy fixed byte ranges defined by the GGML ABI."
+    label: "Place every field in the record",
+    detail: "The highlighted scales[] field is one byte range inside the full GGML record, next to global metadata and packed weight codes."
   },
   {
     label: "Reconstruct inside the kernel",
@@ -339,6 +347,14 @@ function KQuantMetadataMap({
   const fieldOffset = sections
     .slice(0, scalesIndex)
     .reduce((total, section) => total + section.bytes, 0);
+  const scalesField = ggufStorageLayout(dtype)?.find(
+    ({ name }) => name === "scales"
+  );
+  if (!scalesField) {
+    throw new Error(`Missing ${dtype} scales field contract`);
+  }
+  const example = kQuantMetadataExample(dtype, group);
+  const selectedByteIndexes = new Set(bytes.map(({ index }) => index));
 
   return (
     <div className="wv-kquant-bit-map">
@@ -351,7 +367,66 @@ function KQuantMetadataMap({
         </span>
         <em>{metadataEncoding(dtype)}</em>
       </header>
-      <div>
+      <div className="wv-kquant-record-locator">
+        <header>
+          <strong>Start with the complete {dtype} record</strong>
+          <small>{K_QUANT_LAYOUTS[dtype].bytes} bytes total</small>
+        </header>
+        <div>
+          {sections.map((section) => {
+            const scales = section.label.startsWith("scales:");
+            return (
+              <span
+                className={scales ? "selected" : ""}
+                key={section.label}
+                style={{ flexGrow: section.bytes }}
+              >
+                <b>{section.label.split(":")[0]}</b>
+                <small>{section.bytes} B</small>
+                {scales && <em>sub-block metadata lives here</em>}
+              </span>
+            );
+          })}
+        </div>
+        <p>
+          <span>record bytes {fieldOffset}…{fieldOffset + scalesField.bytes - 1}</span>
+          <b>zoom into <code>scales[{scalesField.count}]</code></b>
+          <span aria-hidden="true">↓</span>
+        </p>
+      </div>
+      <div className="wv-kquant-worked-example">
+        <header>
+          <strong>Concrete example</strong>
+          <small>illustrative values, exact encoding rule</small>
+        </header>
+        <ExampleStage label="ideal local parameters" values={example.ideal} />
+        <ChevronRight aria-hidden="true" />
+        <ExampleStage label="global FP step" values={example.global} />
+        <ChevronRight aria-hidden="true" />
+        <ExampleStage label="stored integers" values={example.stored} />
+      </div>
+      <div className="wv-kquant-scale-locator">
+        <header>
+          <strong>
+            <code>scales[{scalesField.count}]</code> inside the physical record
+          </strong>
+          <small>
+            array index + {fieldOffset} = record byte
+          </small>
+        </header>
+        <div>
+          {Array.from({ length: scalesField.count }, (_, index) => (
+            <span
+              className={selectedByteIndexes.has(index) ? "selected" : ""}
+              key={index}
+            >
+              <b>{index}</b>
+              <small>byte {fieldOffset + index}</small>
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="wv-kquant-bit-details">
         {bytes.map((byte) => (
           <div className="wv-kquant-meta-byte" key={byte.index}>
             <header>
@@ -363,6 +438,9 @@ function KQuantMetadataMap({
                 const segment = byte.segments.find(
                   ({ from, to }) => bit >= from && bit <= to
                 );
+                const storedBit = segment
+                  ? metadataBit(example, segment, bit)
+                  : undefined;
                 return (
                   <span
                     aria-label={
@@ -377,7 +455,7 @@ function KQuantMetadataMap({
                     }
                   >
                     <small>{bit}</small>
-                    <b>{segment ? shortMetadataLabel(segment.label) : "·"}</b>
+                    <b>{storedBit ?? "·"}</b>
                   </span>
                 );
               })}
@@ -393,10 +471,30 @@ function KQuantMetadataMap({
         ))}
       </div>
       <small className="wv-kquant-bit-note">
-        <b>s</b> = selected local scale bits · <b>m</b> = selected local minimum
-        bits · <b>·</b> = bits shared by another sub-block
+        Blue bits assemble <b>s[{group}] = {example.scaleCode}</b>
+        {example.minimumCode !== undefined && (
+          <> · gold bits assemble <b>m[{group}] = {example.minimumCode}</b></>
+        )}
+        {" "}· <b>·</b> belongs to another sub-block
       </small>
     </div>
+  );
+}
+
+function ExampleStage({
+  label,
+  values
+}: {
+  label: string;
+  values: readonly string[];
+}) {
+  return (
+    <span>
+      <small>{label}</small>
+      {values.map((value) => (
+        <code key={value}>{value}</code>
+      ))}
+    </span>
   );
 }
 
@@ -506,9 +604,59 @@ function metadataEncoding(dtype: KQuantLayout["dtype"]): string {
   return "one signed int8 byte";
 }
 
-function shortMetadataLabel(label: string): string {
-  if (label.includes("m[")) return "m";
-  return "s";
+function kQuantMetadataExample(
+  dtype: KQuantLayout["dtype"],
+  group: number
+): KQuantMetadataExample {
+  if (dtype === "Q2_K") {
+    return {
+      ideal: [`a[${group}] = 0.40`, `b[${group}] = 0.12`],
+      global: ["d = 0.04", "dmin = 0.02"],
+      stored: [`s[${group}] = round(0.40/0.04) = 10`, `m[${group}] = round(0.12/0.02) = 6`],
+      scaleCode: 10,
+      minimumCode: 6
+    };
+  }
+  if (dtype === "Q4_K" || dtype === "Q5_K") {
+    return {
+      ideal: [`a[${group}] = 0.42`, `b[${group}] = 0.17`],
+      global: ["d = 0.01", "dmin = 0.005"],
+      stored: [`s[${group}] = round(0.42/0.01) = 42`, `m[${group}] = round(0.17/0.005) = 34`],
+      scaleCode: 42,
+      minimumCode: 34
+    };
+  }
+  if (dtype === "Q3_K") {
+    return {
+      ideal: [`a[${group}] = +0.10`],
+      global: ["d = 0.01", "bias = 32"],
+      stored: [`s[${group}] = round(0.10/0.01) + 32 = 42`],
+      scaleCode: 42
+    };
+  }
+  return {
+    ideal: [`a[${group}] = +0.42`],
+    global: ["d = 0.01"],
+    stored: [`signed_s[${group}] = round(0.42/0.01) = 42`],
+    scaleCode: 42
+  };
+}
+
+function metadataBit(
+  example: KQuantMetadataExample,
+  segment: KQuantMetadataByte["segments"][number],
+  physicalBit: number
+): number {
+  const value = segment.tone === "minimum"
+    ? example.minimumCode
+    : example.scaleCode;
+  if (value === undefined) {
+    throw new Error(`Missing value for ${segment.label}`);
+  }
+  const logicalBit = segment.label.includes("high 2")
+    ? physicalBit - segment.from + 4
+    : physicalBit - segment.from;
+  return (value >> logicalBit) & 1;
 }
 
 function signedScaleLabel(dtype: KQuantLayout["dtype"]): string {

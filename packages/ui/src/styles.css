@@ -553,7 +553,40 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-kquant-bit-map > header span small { margin-top: 3px; color: var(--wv-faint); font-size: 7px; }
 .wv-kquant-bit-map > header span code { color: var(--wv-accent); font: 700 7px ui-monospace, monospace; }
 .wv-kquant-bit-map > header em { color: var(--wv-warning-text); font: 700 7px ui-monospace, monospace; font-style: normal; }
-.wv-kquant-bit-map > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
+.wv-kquant-record-locator { margin-bottom: 7px; padding: 7px; border: 1px solid var(--wv-border); border-radius: var(--wv-small-radius); background: var(--wv-surface-alt); }
+.wv-kquant-record-locator > header { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.wv-kquant-record-locator > header strong { font-size: 8px; }
+.wv-kquant-record-locator > header small { color: var(--wv-faint); font: 6px ui-monospace, monospace; }
+.wv-kquant-record-locator > div { min-height: 48px; display: flex; gap: 2px; overflow-x: auto; border-radius: var(--wv-small-radius); }
+.wv-kquant-record-locator > div > span { min-width: 58px; display: grid; place-content: center; padding: 5px; text-align: center; color: var(--wv-faint); background: var(--wv-surface); border: 1px solid var(--wv-border); }
+.wv-kquant-record-locator > div > span.selected { min-width: 150px; color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 17%, var(--wv-surface)); border: 2px solid var(--wv-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--wv-accent) 12%, transparent); }
+.wv-kquant-record-locator span b, .wv-kquant-record-locator span small, .wv-kquant-record-locator span em { display: block; }
+.wv-kquant-record-locator span b { font: 700 8px ui-monospace, monospace; }
+.wv-kquant-record-locator span small { margin-top: 2px; font: 6px ui-monospace, monospace; }
+.wv-kquant-record-locator span em { margin-top: 3px; font: 700 6px ui-monospace, monospace; font-style: normal; }
+.wv-kquant-record-locator > p { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 6px 0 0; color: var(--wv-faint); font: 6px ui-monospace, monospace; }
+.wv-kquant-record-locator > p b { color: var(--wv-accent); }
+.wv-kquant-record-locator > p code { font: inherit; }
+.wv-kquant-worked-example { display: grid; grid-template-columns: 1.1fr 1fr 18px 1fr 18px 1.5fr; align-items: stretch; gap: 4px; margin-bottom: 7px; }
+.wv-kquant-worked-example > header, .wv-kquant-worked-example > span { padding: 7px; border: 1px solid var(--wv-border); border-radius: var(--wv-small-radius); background: var(--wv-surface-alt); }
+.wv-kquant-worked-example > header { display: grid; align-content: center; }
+.wv-kquant-worked-example > header strong, .wv-kquant-worked-example > header small, .wv-kquant-worked-example > span small, .wv-kquant-worked-example > span code { display: block; }
+.wv-kquant-worked-example > header strong { font-size: 8px; }
+.wv-kquant-worked-example > header small, .wv-kquant-worked-example > span small { margin-top: 3px; color: var(--wv-faint); font-size: 6px; }
+.wv-kquant-worked-example > span code { margin-top: 4px; color: var(--wv-text); font: 700 7px/1.35 ui-monospace, monospace; }
+.wv-kquant-worked-example > svg { align-self: center; width: 14px; color: var(--wv-accent); }
+.wv-kquant-scale-locator { margin-bottom: 7px; padding: 7px; border: 1px solid var(--wv-border); border-radius: var(--wv-small-radius); background: var(--wv-surface-alt); }
+.wv-kquant-scale-locator > header { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.wv-kquant-scale-locator > header strong { font-size: 8px; }
+.wv-kquant-scale-locator > header code { color: var(--wv-accent); font: 700 8px ui-monospace, monospace; }
+.wv-kquant-scale-locator > header small { color: var(--wv-faint); font: 6px ui-monospace, monospace; }
+.wv-kquant-scale-locator > div { display: grid; grid-template-columns: repeat(16, minmax(32px, 1fr)); gap: 2px; overflow-x: auto; }
+.wv-kquant-scale-locator span { min-width: 32px; padding: 4px 2px; text-align: center; color: var(--wv-faint); background: var(--wv-surface); border: 1px solid var(--wv-border); border-radius: 2px; }
+.wv-kquant-scale-locator span.selected { color: var(--wv-accent); border-color: var(--wv-accent); background: color-mix(in srgb, var(--wv-accent) 16%, var(--wv-surface)); }
+.wv-kquant-scale-locator span b, .wv-kquant-scale-locator span small { display: block; }
+.wv-kquant-scale-locator span b { font: 700 7px ui-monospace, monospace; }
+.wv-kquant-scale-locator span small { margin-top: 2px; font: 5px ui-monospace, monospace; }
+.wv-kquant-bit-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
 .wv-kquant-meta-byte { min-width: 0; padding: 6px; border: 1px solid var(--wv-border); border-radius: var(--wv-small-radius); background: var(--wv-surface-alt); }
 .wv-kquant-meta-byte > header { display: flex; justify-content: space-between; gap: 5px; margin-bottom: 5px; }
 .wv-kquant-meta-byte > header code { color: var(--wv-text); font: 700 7px ui-monospace, monospace; }
