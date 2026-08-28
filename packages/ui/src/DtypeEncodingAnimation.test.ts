@@ -17,6 +17,7 @@ import {
 import {
   isKQuantDtype,
   K_QUANT_LAYOUTS,
+  kQuantCodeExample,
   kQuantMetadataBytes
 } from "./KQuantAnimation";
 import { ggufStorageLayout } from "./gguf-storage-layouts";
@@ -129,12 +130,15 @@ describe("K-quant animation layouts", () => {
         layout.sections.reduce((total, section) => total + section.bytes, 0)
       ).toBe(layout.bytes);
       expect(
-        layout.sections.map(({ label, bytes }) => ({ label, bytes }))
-      ).toEqual(
-        fields?.map((field) => ({
-          label: `${field.name}: ${field.type}[${field.count}]`,
-          bytes: field.bytes
+        layout.sections.map(({ name, type, count, bytes, role }) => ({
+          name,
+          type,
+          count,
+          bytes,
+          role
         }))
+      ).toEqual(
+        fields
       );
     }
   );
@@ -203,6 +207,44 @@ describe("K-quant animation layouts", () => {
         ]
       }
     ]);
+  });
+
+  it("traces one code from source float through exact K-quant record bits", () => {
+    expect(kQuantCodeExample("Q2_K", 15)).toMatchObject({
+      source: "w[240] = 0.68",
+      storage: expect.arrayContaining([
+        "qs[48] bits 6…7 ← 10₂",
+        "qs starts at record byte 16, so this slice is in byte 64"
+      ])
+    });
+    expect(kQuantCodeExample("Q3_K", 15)).toMatchObject({
+      source: "w[240] = −0.30",
+      storage: expect.arrayContaining([
+        "qs[48] bits 6…7 ← 01₂",
+        "hmask[16] bit 7 ← 0"
+      ])
+    });
+    expect(kQuantCodeExample("Q4_K", 7)).toMatchObject({
+      source: "w[224] = 3.61",
+      storage: expect.arrayContaining([
+        "qs[96] high bits 4…7 ← 1001₂",
+        "qs starts at record byte 16, so this nibble is in byte 112"
+      ])
+    });
+    expect(kQuantCodeExample("Q5_K", 7)).toMatchObject({
+      source: "w[224] = 7.39",
+      storage: expect.arrayContaining([
+        "low 4 bits 0010₂ → qs[96] bits 4…7",
+        "fifth bit 1 → qh[0] bit 7"
+      ])
+    });
+    expect(kQuantCodeExample("Q6_K", 15)).toMatchObject({
+      source: "w[240] = −4.62",
+      storage: expect.arrayContaining([
+        "stored 21 = 010101₂; low 4 bits 0101₂ → ql[112] bits 4…7",
+        "high 2 bits 01₂ → qh[48] bits 6…7"
+      ])
+    });
   });
 });
 

@@ -16,7 +16,14 @@ export interface KQuantLayout {
   valuesPerSubBlock: number;
   scaleBits: number;
   minBits?: number;
-  sections: Array<{ label: string; bytes: number; tone: "global" | "local" | "codes" }>;
+  sections: Array<{
+    name: string;
+    type: string;
+    count: number;
+    bytes: number;
+    role: string;
+    tone: "global" | "local" | "codes";
+  }>;
 }
 
 export interface KQuantMetadataByte {
@@ -35,6 +42,15 @@ interface KQuantMetadataExample {
   stored: readonly string[];
   scaleCode: number;
   minimumCode?: number;
+}
+
+export interface KQuantCodeExample {
+  source: string;
+  quantize: string;
+  code: string;
+  storage: readonly string[];
+  unpack: string;
+  decode: string;
 }
 
 export const K_QUANT_LAYOUTS: Record<KQuantLayout["dtype"], KQuantLayout> = {
@@ -147,6 +163,7 @@ export function KQuantAnimation({ dtype }: { dtype: KQuantLayout["dtype"] }) {
   const [selectedSubBlock, setSelectedSubBlock] = useState(0);
   const { step } = player;
   const affine = layout.minBits !== undefined;
+  const codeExample = kQuantCodeExample(dtype, selectedSubBlock);
 
   return (
     <section className="wv-kquant-demo">
@@ -279,39 +296,63 @@ export function KQuantAnimation({ dtype }: { dtype: KQuantLayout["dtype"] }) {
               {layout.sections.map((section) => (
                 <span
                   className={section.tone}
-                  key={section.label}
+                  key={section.name}
                   style={{ flexGrow: section.bytes }}
                 >
-                  <strong>{section.label}</strong>
+                  <strong>{section.name}: {section.type}[{section.count}]</strong>
                   <small>{section.bytes} B</small>
                 </span>
               ))}
             </div>
+            <dl className="wv-kquant-field-glossary">
+              {layout.sections.map((section) => (
+                <div key={section.name}>
+                  <dt><code>{section.name}</code> = {fieldMeaning(section.name)}</dt>
+                  <dd>{section.role}</dd>
+                </div>
+              ))}
+            </dl>
           </div>
 
           <ChevronRight className="wv-kquant-down" aria-hidden="true" />
 
           <div className="wv-kquant-decode">
-            <div>
-              <span>one packed code</span>
-              <strong>{sampleCode(dtype)}</strong>
-              <small>{layout.codeBits} bits from sub {selectedSubBlock}</small>
+            <header>
+              <strong>
+                One illustrative weight in sub {selectedSubBlock}, lane 0, end to end
+              </strong>
+              <small>
+                illustrative numbers · exact {dtype} quantize, bit-packing, and decode rules
+              </small>
+            </header>
+            <div className="wv-kquant-code-journey">
+              <CodeStage label="1 · source float" values={[codeExample.source]} />
+              <ChevronRight aria-hidden="true" />
+              <CodeStage
+                label={`2 · choose a ${layout.codeBits}-bit code`}
+                values={[codeExample.quantize, codeExample.code]}
+              />
+              <ChevronRight aria-hidden="true" />
+              <CodeStage label="3 · write record bits" values={codeExample.storage} />
+              <ChevronRight aria-hidden="true" />
+              <CodeStage
+                label="4 · read and reconstruct"
+                values={[codeExample.unpack, codeExample.decode]}
+              />
             </div>
-            <ChevronRight aria-hidden="true" />
-            <code>{decodeFormula(dtype, selectedSubBlock)}</code>
-            <ChevronRight aria-hidden="true" />
-            <div>
-              <span>register only</span>
-              <strong>w′ × activation → Σ</strong>
-              <small>no expanded weight tensor</small>
-            </div>
+            <p>
+              <code>q</code> is the small integer level chosen for one weight. The
+              record does not store the original float: it stores q inside the named
+              code fields above, then the kernel rebuilds w′ and immediately computes{" "}
+              <code>w′ × activation → Σ</code>.
+            </p>
           </div>
         </div>
 
         <div className="wv-kquant-key">
           <span><i className="global" /> one value for all 256 weights</span>
           <span><i className="local" /> one compact value per sub-block</span>
-          <span><i className="codes" /> one low-bit code per weight</span>
+          <span><i className="codes" /> packed q codes: one discrete level ID per weight</span>
         </div>
       </div>
 
@@ -338,9 +379,7 @@ function KQuantMetadataMap({
 }) {
   const bytes = kQuantMetadataBytes(dtype, group);
   const sections = K_QUANT_LAYOUTS[dtype].sections;
-  const scalesIndex = sections.findIndex(({ label }) =>
-    label.startsWith("scales:")
-  );
+  const scalesIndex = sections.findIndex(({ name }) => name === "scales");
   if (scalesIndex < 0) {
     throw new Error(`Missing ${dtype} scales field`);
   }
@@ -374,14 +413,14 @@ function KQuantMetadataMap({
         </header>
         <div>
           {sections.map((section) => {
-            const scales = section.label.startsWith("scales:");
+            const scales = section.name === "scales";
             return (
               <span
                 className={scales ? "selected" : ""}
-                key={section.label}
+                key={section.name}
                 style={{ flexGrow: section.bytes }}
               >
-                <b>{section.label.split(":")[0]}</b>
+                <b>{section.name}</b>
                 <small>{section.bytes} B</small>
                 {scales && <em>sub-block metadata lives here</em>}
               </span>
@@ -482,6 +521,23 @@ function KQuantMetadataMap({
 }
 
 function ExampleStage({
+  label,
+  values
+}: {
+  label: string;
+  values: readonly string[];
+}) {
+  return (
+    <span>
+      <small>{label}</small>
+      {values.map((value) => (
+        <code key={value}>{value}</code>
+      ))}
+    </span>
+  );
+}
+
+function CodeStage({
   label,
   values
 }: {
@@ -685,22 +741,140 @@ function localDerivation(dtype: KQuantLayout["dtype"]): string {
   return `s ≈ round(localScale / d) · localScale = d × ${signedScaleLabel(dtype)} · m ≈ round(localMin / dmin)`;
 }
 
-function sampleCode(dtype: KQuantLayout["dtype"]): string {
-  if (dtype === "Q2_K") return "q = 2";
-  if (dtype === "Q3_K") return "q = −3";
-  if (dtype === "Q4_K") return "q = 9";
-  if (dtype === "Q5_K") return "q = 18";
-  return "q = −11";
+export function kQuantCodeExample(
+  dtype: KQuantLayout["dtype"],
+  group: number
+): KQuantCodeExample {
+  const layout = K_QUANT_LAYOUTS[dtype];
+  if (!Number.isInteger(group) || group < 0 || group >= layout.subBlocks) {
+    throw new RangeError(`Invalid ${dtype} sub-block ${group}`);
+  }
+
+  if (dtype === "Q2_K") {
+    const qsOffset = kQuantFieldOffset(dtype, "qs");
+    const pair = Math.floor((group % 8) / 2);
+    const index = Math.floor(group / 8) * 32 + (group % 2) * 16;
+    const bit = 2 * pair;
+    return {
+      source: `w[${group * 16}] = 0.68`,
+      quantize: "local scale = 0.04×10 = 0.40; local min = 0.02×6 = 0.12",
+      code: "q = clamp(round((0.68 + 0.12) / 0.40), 0, 3) = 2",
+      storage: [
+        "q = 2 = 10₂",
+        `qs[${index}] bits ${bit}…${bit + 1} ← 10₂`,
+        `qs starts at record byte ${qsOffset}, so this slice is in byte ${qsOffset + index}`
+      ],
+      unpack: `q = (qs[${index}] >> ${bit}) & 0b11 = 2`,
+      decode: "w′ = (0.04×10)×2 − (0.02×6) = 0.68"
+    };
+  }
+
+  if (dtype === "Q3_K") {
+    const hmaskOffset = kQuantFieldOffset(dtype, "hmask");
+    const qsOffset = kQuantFieldOffset(dtype, "qs");
+    const pair = Math.floor((group % 8) / 2);
+    const qsIndex = Math.floor(group / 8) * 32 + (group % 2) * 16;
+    const qsBit = 2 * pair;
+    const hmaskIndex = (group % 2) * 16;
+    const hmaskBit = Math.floor(group / 2);
+    return {
+      source: `w[${group * 16}] = −0.30`,
+      quantize: "local scale = 0.01×(42−32) = 0.10",
+      code: "q = clamp(round(−0.30 / 0.10), −4, 3) = −3; stored = q+4 = 1",
+      storage: [
+        `qs[${qsIndex}] bits ${qsBit}…${qsBit + 1} ← 01₂`,
+        `hmask[${hmaskIndex}] bit ${hmaskBit} ← 0`,
+        `record bytes: hmask[${hmaskIndex}] = ${hmaskOffset + hmaskIndex}, qs[${qsIndex}] = ${qsOffset + qsIndex}`
+      ],
+      unpack: `q = low2 − (high bit set ? 0 : 4); here high bit ${hmaskBit} = 0, so q = 1−4 = −3`,
+      decode: "w′ = 0.01×(42−32)×(−3) = −0.30"
+    };
+  }
+
+  if (dtype === "Q4_K") {
+    const qsOffset = kQuantFieldOffset(dtype, "qs");
+    const index = 32 * Math.floor(group / 2);
+    const high = group % 2 === 1;
+    return {
+      source: `w[${group * 32}] = 3.61`,
+      quantize: "local scale = 0.01×42 = 0.42; local min = 0.005×34 = 0.17",
+      code: "q = clamp(round((3.61 + 0.17) / 0.42), 0, 15) = 9",
+      storage: [
+        "q = 9 = 1001₂ (one of 16 four-bit codes)",
+        `qs[${index}] ${high ? "high bits 4…7" : "low bits 0…3"} ← 1001₂`,
+        `qs starts at record byte ${qsOffset}, so this nibble is in byte ${qsOffset + index}`
+      ],
+      unpack: `q = ${high ? `(qs[${index}] >> 4)` : `qs[${index}] & 0x0f`} = 9`,
+      decode: "w′ = (0.01×42)×9 − (0.005×34) = 3.61"
+    };
+  }
+
+  if (dtype === "Q5_K") {
+    const qhOffset = kQuantFieldOffset(dtype, "qh");
+    const qsOffset = kQuantFieldOffset(dtype, "qs");
+    const qsIndex = 32 * Math.floor(group / 2);
+    const highNibble = group % 2 === 1;
+    return {
+      source: `w[${group * 32}] = 7.39`,
+      quantize: "local scale = 0.01×42 = 0.42; local min = 0.005×34 = 0.17",
+      code: "q = clamp(round((7.39 + 0.17) / 0.42), 0, 31) = 18",
+      storage: [
+        `low 4 bits 0010₂ → qs[${qsIndex}] ${highNibble ? "bits 4…7" : "bits 0…3"}`,
+        `fifth bit 1 → qh[0] bit ${group}`,
+        `record bytes: qh[0] = ${qhOffset}, qs[${qsIndex}] = ${qsOffset + qsIndex}`
+      ],
+      unpack: `q = ${highNibble ? `((qs[${qsIndex}] >> 4) & 15)` : `(qs[${qsIndex}] & 15)`} + ((qh[0] bit ${group}) << 4) = 2+16 = 18`,
+      decode: "w′ = (0.01×42)×18 − (0.005×34) = 7.39"
+    };
+  }
+
+  const qlOffset = kQuantFieldOffset(dtype, "ql");
+  const qhOffset = kQuantFieldOffset(dtype, "qh");
+  const half = Math.floor(group / 8);
+  const withinHalf = group % 8;
+  const pair = Math.floor(withinHalf / 2);
+  const lane = (withinHalf % 2) * 16;
+  const qlIndex = half * 64 + (pair % 2) * 32 + lane;
+  const qhIndex = half * 32 + lane;
+  const highNibble = pair >= 2;
+  const qhBit = 2 * pair;
+  return {
+    source: `w[${group * 16}] = −4.62`,
+    quantize: "local scale = 0.01×42 = 0.42",
+    code: "q = clamp(round(−4.62 / 0.42), −32, 31) = −11; stored = q+32 = 21",
+    storage: [
+      `stored 21 = 010101₂; low 4 bits 0101₂ → ql[${qlIndex}] ${highNibble ? "bits 4…7" : "bits 0…3"}`,
+      `high 2 bits 01₂ → qh[${qhIndex}] bits ${qhBit}…${qhBit + 1}`,
+      `record bytes: ql[${qlIndex}] = ${qlOffset + qlIndex}, qh[${qhIndex}] = ${qhOffset + qhIndex}`
+    ],
+    unpack: `q = join(qh bits ${qhBit}…${qhBit + 1}, ql ${highNibble ? "high" : "low"} nibble) − 32 = 21−32 = −11`,
+    decode: "w′ = 0.01×42×(−11) = −4.62"
+  };
 }
 
-function decodeFormula(dtype: KQuantLayout["dtype"], group: number): string {
-  if (dtype === "Q2_K" || dtype === "Q4_K" || dtype === "Q5_K") {
-    return `w′ = (d × s[${group}]) × q − (dmin × m[${group}])`;
+function kQuantFieldOffset(
+  dtype: KQuantLayout["dtype"],
+  fieldName: string
+): number {
+  const sections = K_QUANT_LAYOUTS[dtype].sections;
+  const index = sections.findIndex(({ name }) => name === fieldName);
+  if (index < 0) {
+    throw new Error(`Missing ${dtype}.${fieldName} field`);
   }
-  if (dtype === "Q3_K") {
-    return `w′ = d × (s[${group}] − 32) × q`;
-  }
-  return `w′ = d × signed_s[${group}] × q`;
+  return sections
+    .slice(0, index)
+    .reduce((offset, section) => offset + section.bytes, 0);
+}
+
+function fieldMeaning(name: string): string {
+  if (name === "qs") return "packed quantized symbols (the q codes)";
+  if (name === "ql") return "packed low bits of each q code";
+  if (name === "qh") return "packed high bits of each q code";
+  if (name === "hmask") return "high-bit mask completing each signed q code";
+  if (name === "scales") return "packed local scale/minimum integers";
+  if (name === "d") return "global scale step";
+  if (name === "dmin") return "global minimum-magnitude step";
+  return name;
 }
 
 function kQuantSections(
@@ -717,8 +891,11 @@ function kQuantSections(
       throw new Error(`Missing ${dtype}.${field.name} animation tone`);
     }
     return {
-      label: `${field.name}: ${field.type}[${field.count}]`,
+      name: field.name,
+      type: field.type,
+      count: field.count,
       bytes: field.bytes,
+      role: field.role,
       tone
     };
   });

@@ -539,7 +539,7 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-kquant-local-values small { color: var(--wv-faint); font-size: 6px; }
 .wv-kquant-local-values strong { margin-top: 3px; color: var(--wv-accent); font: 700 8px ui-monospace, monospace; }
 .wv-kquant-hierarchy { display: grid; grid-template-columns: 1fr 24px 1.45fr; align-items: center; gap: 6px; }
-.wv-kquant-hierarchy > svg, .wv-kquant-decode > svg { width: 15px; height: 15px; color: var(--wv-accent); }
+.wv-kquant-hierarchy > svg, .wv-kquant-code-journey > svg { width: 15px; height: 15px; color: var(--wv-accent); }
 .wv-kquant-metadata-stage { display: grid; gap: 6px; }
 .wv-kquant-global-meta, .wv-kquant-local-meta { padding: 9px 10px; border: 1px solid var(--wv-border); border-radius: var(--wv-control-radius); background: var(--wv-surface); }
 .wv-kquant-global-meta { border-color: var(--wv-warning-border); background: var(--wv-warning-bg); }
@@ -620,12 +620,24 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-kquant-layout span strong, .wv-kquant-layout span small { display: block; }
 .wv-kquant-layout span strong { font-size: 7px; }
 .wv-kquant-layout span small { margin-top: 3px; font: 6px ui-monospace, monospace; opacity: .75; }
-.wv-kquant-decode { display: grid; grid-template-columns: .6fr 20px 1.7fr 20px 1fr; align-items: center; gap: 6px; }
-.wv-kquant-decode > div, .wv-kquant-decode > code { padding: 9px; border: 1px solid var(--wv-border); border-radius: var(--wv-control-radius); background: var(--wv-surface); }
-.wv-kquant-decode > div span, .wv-kquant-decode > div strong, .wv-kquant-decode > div small { display: block; }
-.wv-kquant-decode > div span, .wv-kquant-decode > div small { color: var(--wv-faint); font-size: 7px; }
-.wv-kquant-decode > div strong { margin: 3px 0; font: 700 9px ui-monospace, monospace; }
-.wv-kquant-decode > code { color: var(--wv-accent); font: 700 9px/1.5 ui-monospace, monospace; text-align: center; }
+.wv-kquant-field-glossary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 7px 0 0; }
+.wv-kquant-field-glossary > div { min-width: 0; padding: 6px 7px; border: 1px solid var(--wv-border); border-radius: var(--wv-small-radius); background: var(--wv-surface-alt); }
+.wv-kquant-field-glossary dt { color: var(--wv-text); font-size: 7px; }
+.wv-kquant-field-glossary dt code { color: var(--wv-accent); font: 700 8px ui-monospace, monospace; }
+.wv-kquant-field-glossary dd { margin: 3px 0 0; color: var(--wv-muted); font-size: 7px; line-height: 1.4; }
+.wv-kquant-decode { padding: 9px; border: 1px solid var(--wv-border); border-radius: var(--wv-control-radius); background: var(--wv-surface); }
+.wv-kquant-decode > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+.wv-kquant-decode > header strong { font-size: 9px; }
+.wv-kquant-decode > header small { color: var(--wv-faint); font: 6px ui-monospace, monospace; }
+.wv-kquant-code-journey { display: grid; grid-template-columns: .72fr 16px 1.35fr 16px 1.35fr 16px 1.55fr; align-items: stretch; gap: 4px; }
+.wv-kquant-code-journey > svg { align-self: center; }
+.wv-kquant-code-journey > span { min-width: 0; padding: 7px; border: 1px solid var(--wv-border); border-radius: var(--wv-small-radius); background: var(--wv-surface-alt); }
+.wv-kquant-code-journey > span small, .wv-kquant-code-journey > span code { display: block; }
+.wv-kquant-code-journey > span small { margin-bottom: 5px; color: var(--wv-faint); font-size: 6px; text-transform: uppercase; letter-spacing: .03em; }
+.wv-kquant-code-journey > span code { overflow-wrap: anywhere; color: var(--wv-accent); font: 700 7px/1.45 ui-monospace, monospace; }
+.wv-kquant-code-journey > span code + code { margin-top: 4px; color: var(--wv-text); }
+.wv-kquant-decode > p { margin: 7px 0 0; padding-top: 7px; color: var(--wv-muted); border-top: 1px solid var(--wv-border); font-size: 7px; line-height: 1.5; }
+.wv-kquant-decode > p code { color: var(--wv-accent); font: 700 7px ui-monospace, monospace; }
 .wv-kquant-key { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 3px; color: var(--wv-faint); font-size: 7px; }
 .wv-kquant-key span { display: flex; align-items: center; gap: 4px; }
 .wv-kquant-key i { width: 7px; height: 7px; border-radius: 2px; }

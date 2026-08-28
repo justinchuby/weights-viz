@@ -22,6 +22,8 @@
   remains readable as later stages play.
 - Trace every symbol in complex GGUF reconstruction formulas back to its exact
   record field, packed bits, fixed runtime table, lane index, or format constant.
+- Define every K-quant physical field and show a concrete source float becoming
+  a q code, entering exact `qs`/`ql`/`qh`/`hmask` bits, and decoding again.
 
 ## 0.3.0
 
