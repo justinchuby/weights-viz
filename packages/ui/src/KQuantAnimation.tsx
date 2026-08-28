@@ -6,6 +6,7 @@ import {
   type AnimationStep,
   useAnimationPlayer
 } from "./DtypeAnimationPlayer";
+import { ggufStorageLayout } from "./gguf-storage-layouts";
 
 export interface KQuantLayout {
   dtype: "Q2_K" | "Q3_K" | "Q4_K" | "Q5_K" | "Q6_K";
@@ -27,11 +28,12 @@ export const K_QUANT_LAYOUTS: Record<KQuantLayout["dtype"], KQuantLayout> = {
     valuesPerSubBlock: 16,
     scaleBits: 4,
     minBits: 4,
-    sections: [
-      { label: "16 packed scale/min bytes", bytes: 16, tone: "local" },
-      { label: "2-bit code planes", bytes: 64, tone: "codes" },
-      { label: "d + dmin (FP16)", bytes: 4, tone: "global" }
-    ]
+    sections: kQuantSections("Q2_K", {
+      scales: "local",
+      qs: "codes",
+      d: "global",
+      dmin: "global"
+    })
   },
   Q3_K: {
     dtype: "Q3_K",
@@ -40,12 +42,12 @@ export const K_QUANT_LAYOUTS: Record<KQuantLayout["dtype"], KQuantLayout> = {
     subBlocks: 16,
     valuesPerSubBlock: 16,
     scaleBits: 6,
-    sections: [
-      { label: "high-bit mask", bytes: 32, tone: "codes" },
-      { label: "low 2-bit planes", bytes: 64, tone: "codes" },
-      { label: "16 packed 6-bit scales", bytes: 12, tone: "local" },
-      { label: "d (FP16)", bytes: 2, tone: "global" }
-    ]
+    sections: kQuantSections("Q3_K", {
+      hmask: "codes",
+      qs: "codes",
+      scales: "local",
+      d: "global"
+    })
   },
   Q4_K: {
     dtype: "Q4_K",
@@ -55,11 +57,12 @@ export const K_QUANT_LAYOUTS: Record<KQuantLayout["dtype"], KQuantLayout> = {
     valuesPerSubBlock: 32,
     scaleBits: 6,
     minBits: 6,
-    sections: [
-      { label: "d + dmin (FP16)", bytes: 4, tone: "global" },
-      { label: "8 × scale/min (12 packed B)", bytes: 12, tone: "local" },
-      { label: "4-bit nibbles", bytes: 128, tone: "codes" }
-    ]
+    sections: kQuantSections("Q4_K", {
+      d: "global",
+      dmin: "global",
+      scales: "local",
+      qs: "codes"
+    })
   },
   Q5_K: {
     dtype: "Q5_K",
@@ -69,12 +72,13 @@ export const K_QUANT_LAYOUTS: Record<KQuantLayout["dtype"], KQuantLayout> = {
     valuesPerSubBlock: 32,
     scaleBits: 6,
     minBits: 6,
-    sections: [
-      { label: "d + dmin (FP16)", bytes: 4, tone: "global" },
-      { label: "8 × scale/min (12 packed B)", bytes: 12, tone: "local" },
-      { label: "high-bit plane", bytes: 32, tone: "codes" },
-      { label: "low 4-bit nibbles", bytes: 128, tone: "codes" }
-    ]
+    sections: kQuantSections("Q5_K", {
+      d: "global",
+      dmin: "global",
+      scales: "local",
+      qh: "codes",
+      qs: "codes"
+    })
   },
   Q6_K: {
     dtype: "Q6_K",
@@ -83,12 +87,12 @@ export const K_QUANT_LAYOUTS: Record<KQuantLayout["dtype"], KQuantLayout> = {
     subBlocks: 16,
     valuesPerSubBlock: 16,
     scaleBits: 8,
-    sections: [
-      { label: "low 4-bit planes", bytes: 128, tone: "codes" },
-      { label: "high 2-bit planes", bytes: 64, tone: "codes" },
-      { label: "16 signed int8 scales", bytes: 16, tone: "local" },
-      { label: "d (FP16)", bytes: 2, tone: "global" }
-    ]
+    sections: kQuantSections("Q6_K", {
+      ql: "codes",
+      qh: "codes",
+      scales: "local",
+      d: "global"
+    })
   }
 };
 
@@ -312,10 +316,10 @@ function signedScaleLabel(dtype: KQuantLayout["dtype"]): string {
 
 function globalDerivation(dtype: KQuantLayout["dtype"]): string {
   if (dtype === "Q2_K") {
-    return "d ≈ max(local scales) / 15 · dmin ≈ max(local minima) / 15";
+    return "d ≈ max(local scales) / 15; dmin ≈ max(local minima) / 15";
   }
   if (dtype === "Q4_K" || dtype === "Q5_K") {
-    return "d ≈ max(local scales) / 63 · dmin ≈ max(local minima) / 63";
+    return "d ≈ max(local scales) / 63; dmin ≈ max(local minima) / 63";
   }
   return `d is chosen so every signed local scale fits ${K_QUANT_LAYOUTS[dtype].scaleBits} bits`;
 }
@@ -346,4 +350,25 @@ function decodeFormula(dtype: KQuantLayout["dtype"], group: number): string {
     return `w′ = d × (s[${group}] − 32) × q`;
   }
   return `w′ = d × signed_s[${group}] × q`;
+}
+
+function kQuantSections(
+  dtype: KQuantLayout["dtype"],
+  tones: Record<string, "global" | "local" | "codes">
+): KQuantLayout["sections"] {
+  const fields = ggufStorageLayout(dtype);
+  if (!fields) {
+    throw new Error(`Missing GGUF storage layout for ${dtype}`);
+  }
+  return fields.map((field) => {
+    const tone = tones[field.name];
+    if (!tone) {
+      throw new Error(`Missing ${dtype}.${field.name} animation tone`);
+    }
+    return {
+      label: `${field.name}: ${field.type}[${field.count}]`,
+      bytes: field.bytes,
+      tone
+    };
+  });
 }

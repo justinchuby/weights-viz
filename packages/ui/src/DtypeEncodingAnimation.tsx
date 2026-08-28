@@ -8,11 +8,13 @@ import {
   type AnimationStep,
   useAnimationPlayer
 } from "./DtypeAnimationPlayer";
+import { ggufQuantContract } from "./gguf-quant-contracts";
 import { ggufStorageLayout } from "./gguf-storage-layouts";
 
 export type DtypeAnimationKind =
   | "q4"
   | "k-quant"
+  | "gguf-contract"
   | "floating"
   | "integer"
   | "packed"
@@ -42,6 +44,7 @@ export function dtypeAnimationKind(
   const dtype = dtypeInput.toUpperCase();
   if (dtype === "Q4_0") return "q4";
   if (/^Q[2-6]_K$/.test(dtype)) return "k-quant";
+  if (format === "gguf" && ggufQuantContract(dtype)) return "gguf-contract";
   if (dtype === "STRING" || dtype === "UNDEFINED") return "schema";
   if (["Q4_2", "Q4_3"].includes(dtype) || /_(?:4_4|4_8|8_8)$/.test(dtype)) {
     return "legacy";
@@ -215,6 +218,7 @@ function encodedTitle(kind: DtypeAnimationKind): string {
   if (kind === "companion") return "Codes + sums";
   if (kind === "schema") return "Container record";
   if (kind === "legacy") return "Historical type ID";
+  if (kind === "gguf-contract") return "Exact block contract";
   if (kind === "block") return "Block codes";
   return "Bit representation";
 }

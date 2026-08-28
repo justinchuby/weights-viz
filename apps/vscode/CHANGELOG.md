@@ -11,6 +11,9 @@
 - Add byte-accurate super-block animations for Q2_K through Q6_K, including
   fixed sub-block geometry, compressed local scales/minima, code bit-planes,
   physical field order, parameter derivation, and reconstruction formulas.
+- Give every complex GGML block format a dedicated ABI contract lesson covering
+  fixed grouping, exact struct fields, metadata derivation, code semantics,
+  bit-plane or codebook packing, and kernel reconstruction.
 
 ## 0.3.0
 

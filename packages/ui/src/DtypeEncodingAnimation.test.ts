@@ -10,6 +10,10 @@ import {
   createDtypeAnimationStory,
   dtypeAnimationKind
 } from "./DtypeEncodingAnimation";
+import {
+  GGUF_QUANT_CONTRACT_DTYPES,
+  ggufQuantContract
+} from "./gguf-quant-contracts";
 import { isKQuantDtype, K_QUANT_LAYOUTS } from "./KQuantAnimation";
 import { ggufStorageLayout } from "./gguf-storage-layouts";
 import { createDtypeEducation } from "./dtype-education";
@@ -33,31 +37,29 @@ describe("dtype animation coverage", () => {
   it("routes representative encodings to distinct visual stories", () => {
     expect(dtypeAnimationKind("gguf", "Q4_0")).toBe("q4");
     expect(dtypeAnimationKind("gguf", "Q4_K")).toBe("k-quant");
-    expect(dtypeAnimationKind("gguf", "IQ2_XS")).toBe("codebook");
-    expect(dtypeAnimationKind("gguf", "TQ1_0")).toBe("ternary");
-    expect(dtypeAnimationKind("gguf", "NVFP4")).toBe("microscale");
+    expect(dtypeAnimationKind("gguf", "IQ2_XS")).toBe("gguf-contract");
+    expect(dtypeAnimationKind("gguf", "TQ1_0")).toBe("gguf-contract");
+    expect(dtypeAnimationKind("gguf", "NVFP4")).toBe("gguf-contract");
     expect(dtypeAnimationKind("onnx", "UINT4")).toBe("packed");
     expect(dtypeAnimationKind("safetensors", "F8_E4M3")).toBe("floating");
     expect(dtypeAnimationKind("onnx", "STRING")).toBe("schema");
-    expect(story("gguf", "IQ2_XS", 256, 74).title).toContain(
-      "multi-weight grids"
+    expect(ggufQuantContract("IQ2_XS")?.codes.join(" ")).toContain(
+      "9-bit index"
     );
-    expect(story("gguf", "IQ4_NL", 32, 18).title).toContain(
-      "nonlinear levels"
+    expect(ggufQuantContract("IQ4_NL")?.codes.join(" ")).toContain(
+      "nonlinear level"
     );
   });
 
   it("uses encoding-specific stories for edge-case scalar and block types", () => {
-    expect(story("gguf", "Q1_0", 128, 18).encoded).toContain(
-      "d = mean(|w|)"
+    expect(ggufQuantContract("Q1_0")?.metadata).toContain("d = mean(|w|)");
+    expect(ggufQuantContract("Q2_0")?.codes).toContain(
+      "stored = q + 1 ∈ [0,3]"
     );
-    expect(story("gguf", "Q2_0", 64, 18).encoded).toContain(
-      "stored = q + 1"
+    expect(ggufQuantContract("Q5_0")?.codes).toContain(
+      "stored = q + 16 ∈ [0, 31]"
     );
-    expect(story("gguf", "Q5_0", 32, 22).encoded).toContain(
-      "stored = q + 16"
-    );
-    expect(story("gguf", "Q8_0", 32, 34).intro).toContain("no bias");
+    expect(ggufQuantContract("Q8_0")?.packing.join(" ")).toContain("no bias");
     expect(story("onnx", "UINT8", 1, 1).source).not.toContain("−37");
     expect(story("onnx", "BOOL", 1, 1).source).toEqual(["false", "true"]);
     expect(story("onnx", "COMPLEX64", 1, 8).title).toContain(
@@ -67,8 +69,8 @@ describe("dtype animation coverage", () => {
     expect(e8m0.title).toContain("power of two");
     expect(e8m0.stages[1]?.detail).not.toContain("significand fields");
     expect(e8m0.stages[2]?.detail).toContain("independently");
-    expect(story("gguf", "IQ1_S", 256, 50).encoded).not.toContain(
-      "sign index / bits"
+    expect(ggufQuantContract("IQ1_S")?.codes.join(" ")).toContain(
+      "no separate sign mask"
     );
     expect(story("onnx", "STRING", 1, 1).storage).toEqual([
       "42",
@@ -117,10 +119,19 @@ describe("K-quant animation layouts", () => {
   it.each(Object.values(K_QUANT_LAYOUTS))(
     "$dtype accounts for all 256 values and physical bytes",
     (layout) => {
+      const fields = ggufStorageLayout(layout.dtype);
       expect(layout.subBlocks * layout.valuesPerSubBlock).toBe(256);
       expect(
         layout.sections.reduce((total, section) => total + section.bytes, 0)
       ).toBe(layout.bytes);
+      expect(
+        layout.sections.map(({ label, bytes }) => ({ label, bytes }))
+      ).toEqual(
+        fields?.map((field) => ({
+          label: `${field.name}: ${field.type}[${field.count}]`,
+          bytes: field.bytes
+        }))
+      );
     }
   );
 
@@ -137,6 +148,21 @@ describe("K-quant animation layouts", () => {
 });
 
 describe("GGUF physical animation layouts", () => {
+  it("gives every complex block an exact specialized lesson", () => {
+    const blockEntries = GGUF_DTYPE_CATALOG.filter(
+      (entry) => entry.blockBytes !== undefined
+    );
+
+    for (const entry of blockEntries) {
+      const specialized =
+        entry.dtype === "Q4_0" ||
+        isKQuantDtype(entry.dtype) ||
+        ggufQuantContract(entry.dtype) !== undefined;
+      expect(specialized, `${entry.dtype} specialized contract`).toBe(true);
+    }
+    expect(GGUF_QUANT_CONTRACT_DTYPES).toHaveLength(21);
+  });
+
   it("accounts for every parser-recognized block format byte-for-byte", () => {
     const blockEntries = GGUF_DTYPE_CATALOG.filter(
       (entry) => entry.blockBytes !== undefined
@@ -146,17 +172,51 @@ describe("GGUF physical animation layouts", () => {
       const kLayout = isKQuantDtype(entry.dtype)
         ? K_QUANT_LAYOUTS[entry.dtype]
         : undefined;
+      const contract = ggufQuantContract(entry.dtype);
       const fields = ggufStorageLayout(entry.dtype);
-      const bytes =
-        kLayout?.sections.reduce((total, section) => total + section.bytes, 0) ??
-        fields?.reduce((total, field) => total + field.bytes, 0);
+      const bytes = fields?.reduce((total, field) => total + field.bytes, 0);
+      const values =
+        contract?.values ??
+        (kLayout
+          ? kLayout.subBlocks * kLayout.valuesPerSubBlock
+          : entry.dtype === "Q4_0"
+            ? 32
+            : undefined);
       expect(bytes, `${entry.dtype} physical layout`).toBe(entry.blockBytes);
+      expect(values, `${entry.dtype} weight count`).toBe(entry.blockElements);
     }
   });
+
+  it.each(GGUF_QUANT_CONTRACT_DTYPES)(
+    "%s documents scope, parameters, codes, packing, and decode",
+    (dtype) => {
+      const contract = ggufQuantContract(dtype);
+      expect(contract).toBeDefined();
+      if (!contract) throw new Error(`Missing ${dtype} contract`);
+      expect(contract.metadata.length).toBeGreaterThanOrEqual(3);
+      expect(contract.codes.length).toBeGreaterThanOrEqual(3);
+      expect(contract.packing.length).toBeGreaterThanOrEqual(3);
+      expect(contract.decode).toBeTruthy();
+      expect(contract.runtime).toBeTruthy();
+      expect(contract.groups.count * contract.groups.values).toBe(
+        contract.values
+      );
+    }
+  );
 
   it("describes IQ2_S index and sign payloads within qs", () => {
     expect(
       ggufStorageLayout("IQ2_S")?.find((field) => field.name === "qs")?.role
     ).toContain("final 32 bytes hold sign masks");
+  });
+
+  it("preserves special companion and microscale rounding contracts", () => {
+    expect(ggufQuantContract("Q8_1")?.metadata.join(" ")).toContain(
+      "rounded to FP16 independently"
+    );
+    expect(ggufQuantContract("MXFP4")?.metadata.join(" ")).toContain(
+      "special denormal path for e = 0"
+    );
+    expect(ggufQuantContract("MXFP4")?.decode).toContain("E8M0_HALF");
   });
 });

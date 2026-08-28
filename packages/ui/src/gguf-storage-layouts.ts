@@ -33,8 +33,39 @@ const LAYOUTS: Record<string, readonly GgufStorageField[]> = {
   ],
   Q8_1: [
     field("d", "FP16", 1, 2, "one scale for 32 weights"),
-    field("s", "FP16", 1, 2, "d × sum(q), for dot products"),
+    field("s", "FP16", 1, 2, "independently rounded encoder scale × sum(q), for dot products"),
     field("qs", "int8", 32, 32, "one signed code per weight")
+  ],
+  Q2_K: [
+    field("scales", "uint8", 16, 16, "one 4-bit scale and 4-bit minimum per 16 weights"),
+    field("qs", "uint8", 64, 64, "256 interleaved two-bit codes"),
+    field("d", "FP16", 1, 2, "global multiplier for local scales"),
+    field("dmin", "FP16", 1, 2, "global multiplier for local minima")
+  ],
+  Q3_K: [
+    field("hmask", "uint8", 32, 32, "third code bit for 256 weights"),
+    field("qs", "uint8", 64, 64, "low two code bits for 256 weights"),
+    field("scales", "uint8", 12, 12, "16 packed signed six-bit local scales"),
+    field("d", "FP16", 1, 2, "global multiplier for local scales")
+  ],
+  Q4_K: [
+    field("d", "FP16", 1, 2, "global multiplier for local scales"),
+    field("dmin", "FP16", 1, 2, "global multiplier for local minima"),
+    field("scales", "uint8", 12, 12, "eight packed six-bit scale/minimum pairs"),
+    field("qs", "uint8", 128, 128, "256 four-bit codes")
+  ],
+  Q5_K: [
+    field("d", "FP16", 1, 2, "global multiplier for local scales"),
+    field("dmin", "FP16", 1, 2, "global multiplier for local minima"),
+    field("scales", "uint8", 12, 12, "eight packed six-bit scale/minimum pairs"),
+    field("qh", "uint8", 32, 32, "fifth code bit for 256 weights"),
+    field("qs", "uint8", 128, 128, "low four code bits for 256 weights")
+  ],
+  Q6_K: [
+    field("ql", "uint8", 128, 128, "low four code bits for 256 weights"),
+    field("qh", "uint8", 64, 64, "high two code bits for 256 weights"),
+    field("scales", "int8", 16, 16, "one signed local scale per 16 weights"),
+    field("d", "FP16", 1, 2, "global multiplier for local scales")
   ],
   Q8_K: [
     field("d", "FP32", 1, 4, "one scale for 256 values"),
@@ -48,13 +79,13 @@ const LAYOUTS: Record<string, readonly GgufStorageField[]> = {
       "uint16",
       32,
       64,
-      "packed grid/sign indices with embedded 4-bit local scales"
+      "per 32 weights: four grid indices, four sign indices, and one embedded scale nibble"
     )
   ],
   IQ2_XS: [
     field("d", "FP16", 1, 2, "one super-block scale"),
-    field("qs", "uint16", 32, 64, "grid, sign, and index payload"),
-    field("scales", "uint8", 8, 8, "one local scale byte per 32 weights")
+    field("qs", "uint16", 32, 64, "each word holds a 9-bit grid index and 7-bit sign index"),
+    field("scales", "uint8", 8, 8, "two 4-bit local scales per byte")
   ],
   IQ3_XXS: [
     field("d", "FP16", 1, 2, "one scale for 256 weights"),
@@ -63,20 +94,20 @@ const LAYOUTS: Record<string, readonly GgufStorageField[]> = {
       "uint8",
       96,
       96,
-      "packed grid/sign indices with embedded 4-bit local scales"
+      "64 grid-index bytes followed by 32 packed sign/scale bytes"
     )
   ],
   IQ1_S: [
     field("d", "FP16", 1, 2, "one scale for 256 weights"),
     field("qs", "uint8", 32, 32, "low grid-index bits"),
-    field("qh", "uint16", 8, 16, "high index and delta bits")
+    field("qh", "uint16", 8, 16, "four index highs, one local scale, and delta sign per word")
   ],
   IQ3_S: [
     field("d", "FP16", 1, 2, "one super-block scale"),
     field("qs", "uint8", 64, 64, "low grid-index bits"),
     field("qh", "uint8", 8, 8, "high grid-index bits"),
     field("signs", "uint8", 32, 32, "packed sign bits"),
-    field("scales", "uint8", 4, 4, "packed local scales")
+    field("scales", "uint8", 4, 4, "two 4-bit local scales per byte")
   ],
   IQ2_S: [
     field("d", "FP16", 1, 2, "one super-block scale"),
@@ -96,14 +127,14 @@ const LAYOUTS: Record<string, readonly GgufStorageField[]> = {
   ],
   IQ4_XS: [
     field("d", "FP16", 1, 2, "one super-block scale"),
-    field("scales_h", "uint16", 1, 2, "high bits of local scales"),
-    field("scales_l", "uint8", 4, 4, "low bits of local scales"),
+    field("scales_h", "uint16", 1, 2, "two high bits for each of eight local scales"),
+    field("scales_l", "uint8", 4, 4, "packed low four bits for eight local scales"),
     field("qs", "uint8", 128, 128, "256 four-bit codebook indices")
   ],
   IQ1_M: [
     field("qs", "uint8", 32, 32, "low grid-index bits"),
     field("qh", "uint8", 16, 16, "high index and grid-shift bits"),
-    field("scales", "uint8", 8, 8, "packed FP16/global and local scale bits")
+    field("scales", "uint8", 8, 8, "embedded global FP16 bits plus sixteen local 3-bit scales")
   ],
   TQ1_0: [
     field("qs", "uint8", 48, 48, "240 values, five base-3 symbols per byte"),

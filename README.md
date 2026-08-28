@@ -31,8 +31,9 @@ visible using their declared file ranges and produce a diagnostic.
 Click any dtype label in the legend, tensor inspector, or comparison details to
 open a visual guide to its bit fields, byte packing, quantization blocks,
 scales, offsets, and effective bits per weight. Playable encoding stories cover
-every catalog entry, with byte-accurate GGML field layouts and a detailed Q4_0
-walkthrough of its FP16 scale, implicit bias, signed codes, and packed nibbles.
+every catalog entry. All 27 complex GGML block formats expose their fixed ABI
+scope, exact field order and types, metadata derivation, code ranges or
+codebooks, bit-plane packing, and kernel reconstruction formula.
 
 The standalone [Dtype Atlas](https://www.justinchuby.com/weights-viz/?view=dtypes)
 lists every supported SafeTensors, GGUF, and ONNX dtype without requiring a
@@ -40,7 +41,8 @@ model file. GGUF quantization lessons also trace conversion parameter selection,
 fused dequantized matrix operations, and architecture-specific kernel
 optimizations. K-quant lessons open each 256-weight super-block to show its
 fixed sub-block hierarchy, compressed local scales/minima, code bit-planes,
-physical byte order, and reconstruction formula.
+physical byte order, and reconstruction formula; IQ, ternary, companion, and
+microscaled FP4 records receive the same contract-level treatment.
 
 ## Opening local files
 

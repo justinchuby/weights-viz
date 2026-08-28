@@ -24,9 +24,9 @@ import {
   DtypeEncodingAnimation,
   dtypeAnimationKind
 } from "./DtypeEncodingAnimation";
+import { GgufQuantContractAnimation } from "./GgufQuantContractAnimation";
 import {
   isKQuantDtype,
-  K_QUANT_LAYOUTS,
   KQuantAnimation
 } from "./KQuantAnimation";
 import { ggufStorageLayout } from "./gguf-storage-layouts";
@@ -230,6 +230,8 @@ export function DtypeExplorer({
             <Q40DecodeAnimation />
           ) : animationKind === "k-quant" && isKQuantDtype(lesson.dtype) ? (
             <KQuantAnimation dtype={lesson.dtype} />
+          ) : animationKind === "gguf-contract" ? (
+            <GgufQuantContractAnimation dtype={lesson.dtype} />
           ) : (
             <DtypeEncodingAnimation format={format} lesson={lesson} />
           )}
@@ -387,52 +389,52 @@ function BlockDiagram({
   dtype: string;
 }) {
   const fields = ggufStorageLayout(dtype);
-  const kSections = isKQuantDtype(dtype)
-    ? K_QUANT_LAYOUTS[dtype].sections
-    : undefined;
   return (
     <div className="wv-block-diagram">
       <div>
-        {block.sections.map((section) => (
-          <span
-            className={section.tone}
-            key={section.label}
-            style={{ flexGrow: section.bits }}
-          >
-            {section.label}
-            <small>{section.bits} bits</small>
-          </span>
-        ))}
+        {fields
+          ? fields.map((field) => (
+              <span
+                className={storageFieldTone(field.name)}
+                key={field.name}
+                style={{ flexGrow: field.bytes }}
+              >
+                {field.name}: {field.type}[{field.count}]
+                <small>{field.bytes} B</small>
+              </span>
+            ))
+          : block.sections.map((section) => (
+              <span
+                className={section.tone}
+                key={section.label}
+                style={{ flexGrow: section.bits }}
+              >
+                {section.label}
+                <small>{section.bits} bits</small>
+              </span>
+            ))}
       </div>
       <p>
         The dtype ABI fixes one block at <strong>{block.elements} weights</strong>;
         a file cannot choose another block size. Metadata is shared by that group.
       </p>
-      {(fields || kSections) && (
+      {fields && (
         <ul className="wv-block-fields">
-          {fields
-            ? fields.map((field) => (
-                <li key={field.name}>
-                  <code>{field.name}</code>
-                  <span>{field.type} × {field.count} · {field.bytes} B</span>
-                  <small>{field.role}</small>
-                </li>
-              ))
-            : kSections?.map((section) => (
-                <li key={section.label}>
-                  <code>{section.label}</code>
-                  <span>{section.bytes} B</span>
-                  <small>
-                    {section.tone === "global"
-                      ? "shared by all 256 weights"
-                      : section.tone === "local"
-                        ? "compact parameters for each sub-block"
-                        : "packed low-bit weight codes"}
-                  </small>
-                </li>
-              ))}
+          {fields.map((field) => (
+            <li key={field.name}>
+              <code>{field.name}</code>
+              <span>{field.type} × {field.count} · {field.bytes} B</span>
+              <small>{field.role}</small>
+            </li>
+          ))}
         </ul>
       )}
     </div>
   );
+}
+
+function storageFieldTone(name: string): "metadata" | "codes" {
+  return ["qs", "qh", "ql", "hmask", "signs"].includes(name)
+    ? "codes"
+    : "metadata";
 }

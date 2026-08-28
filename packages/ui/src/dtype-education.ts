@@ -3,6 +3,7 @@ import {
   createGgufQuantizationGuide,
   type GgufQuantizationGuide
 } from "./gguf-quantization";
+import { ggufQuantContract } from "./gguf-quant-contracts";
 
 export type EncodingTone =
   | "sign"
@@ -498,6 +499,21 @@ function ggufBlockKind(dtype: string): {
   summary: string;
   formula: NonNullable<DtypeEducation["formula"]>;
 } {
+  const exactContract = ggufQuantContract(dtype);
+  if (exactContract) {
+    const grouping =
+      exactContract.groups.count === 1
+        ? exactContract.groups.label
+        : `${exactContract.groups.count} groups of ${exactContract.groups.values}`;
+    return {
+      family: exactContract.family,
+      summary: `${dtype} fixes ${exactContract.values} weights into ${exactContract.bytes} bytes with ${grouping}.`,
+      formula: {
+        expression: exactContract.decode,
+        explanation: exactContract.runtime
+      }
+    };
+  }
   if (dtype === "Q4_0") {
     return {
       family: "Symmetric block quantization",

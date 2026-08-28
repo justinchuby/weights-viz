@@ -105,8 +105,29 @@ describe("dtype education", () => {
     expect(q8_1.family).toBe("Dot-product companion block");
     expect(q8_1.block?.sections[0]?.label).toContain("scaled sum");
     expect(q8_1.concepts.some(({ term }) => term === "Scaled sum")).toBe(true);
-    expect(q8_k.formula?.expression).toBe("weight ≈ scale × q");
+    expect(q8_k.formula?.expression).toContain("d × q");
     expect(q8_k.block?.sections[0]?.label).toContain("group sums");
+  });
+
+  it("uses exact complex-format contracts in the static lesson", () => {
+    const iq1m = createDtypeEducation(
+      "gguf",
+      makeTensor("IQ1_M", 256n, 56n, {
+        blockBytes: 56,
+        blockElements: 256
+      })
+    );
+    const mxfp4 = createDtypeEducation(
+      "gguf",
+      makeTensor("MXFP4", 32n, 17n, {
+        blockBytes: 17,
+        blockElements: 32
+      })
+    );
+
+    expect(iq1m.formula?.expression).toContain("embedded_d");
+    expect(iq1m.formula?.explanation).toContain("weaving");
+    expect(mxfp4.formula?.expression).toContain("E8M0_HALF");
   });
 
   it("shows how six-bit SafeTensors values cross byte boundaries", () => {
