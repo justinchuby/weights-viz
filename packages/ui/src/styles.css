@@ -680,6 +680,16 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-contract-decode > div small { color: var(--wv-faint); font-size: 7px; }
 .wv-contract-decode > div code { margin-top: 4px; overflow-wrap: anywhere; color: var(--wv-accent); font: 700 9px/1.45 ui-monospace, monospace; }
 .wv-contract-decode p { margin: 0; color: var(--wv-muted); font-size: 8px; line-height: 1.5; }
+.wv-contract-symbols { grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid var(--wv-border); }
+.wv-contract-symbols > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.wv-contract-symbols > header strong { font-size: 8px; }
+.wv-contract-symbols > header small { color: var(--wv-faint); font: 6px ui-monospace, monospace; }
+.wv-contract-symbols dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 7px 0 0; }
+.wv-contract-symbols dl > div { min-width: 0; padding: 6px 7px; border: 1px solid var(--wv-border); border-radius: var(--wv-small-radius); background: var(--wv-surface-alt); }
+.wv-contract-symbols dt { display: flex; align-items: baseline; gap: 7px; }
+.wv-contract-symbols dt code { flex: none; color: var(--wv-accent); font: 700 8px ui-monospace, monospace; }
+.wv-contract-symbols dt span { min-width: 0; color: var(--wv-text); font-size: 7px; }
+.wv-contract-symbols dd { margin: 4px 0 0; color: var(--wv-muted); font-size: 7px; line-height: 1.45; }
 @keyframes wv-encoding-token { from { opacity: .2; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes wv-kquant-cell { to { opacity: .35; transform: scale(.8); } }
 .wv-quant-guide { margin-top: 16px; padding-top: 18px; border-top: 1px solid var(--wv-border); }

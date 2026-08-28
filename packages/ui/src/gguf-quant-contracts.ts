@@ -12,7 +12,14 @@ export interface GgufQuantContract {
   codes: readonly string[];
   packing: readonly string[];
   decode: string;
+  symbols: readonly GgufQuantSymbol[];
   runtime: string;
+}
+
+export interface GgufQuantSymbol {
+  symbol: string;
+  meaning: string;
+  source: string;
 }
 
 const CONTRACTS: Record<string, GgufQuantContract> = {
@@ -350,6 +357,237 @@ function contract(
     codes,
     packing,
     decode,
+    symbols: symbolOrigins(dtype),
     runtime
   };
+}
+
+function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
+  switch (dtype) {
+    case "Q4_1":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("d", "affine step size", "FP16 record field d"),
+        symbol("q", "unsigned four-bit code", "the lane’s nibble in qs"),
+        symbol("m", "shared minimum", "FP16 record field m")
+      ];
+    case "Q5_0":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("storedCode", "unsigned five-bit code", "four low bits from qs joined with bit i from qh"),
+        symbol("join(qh, qs)", "five-bit assembly operation", "take the lane’s qh bit as bit 4 and its qs nibble as bits 0…3"),
+        symbol("qh", "high-code bit plane", "uint32 record field qh"),
+        symbol("qs", "low four code bits", "the lane’s nibble in record field qs"),
+        symbol("d", "shared signed scale", "FP16 record field d"),
+        symbol("16", "implicit code bias", "fixed Q5_0 format constant; it occupies no record bytes")
+      ];
+    case "Q5_1":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("join(qh, qs)", "unsigned five-bit code", "one high bit from qh plus the lane’s four-bit qs nibble"),
+        symbol("d", "affine step size", "FP16 record field d"),
+        symbol("m", "shared minimum", "FP16 record field m")
+      ];
+    case "Q8_0":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("d", "shared scale", "FP16 record field d"),
+        symbol("q", "signed eight-bit code", "the lane’s int8 value in qs"),
+        symbol("int8(…)", "signed interpretation", "the declared int8_t storage type of qs")
+      ];
+    case "Q8_1":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("stored_d", "rounded decode scale", "FP16 record field d"),
+        symbol("q", "signed eight-bit code", "the lane’s int8 value in qs"),
+        symbol("stored_s", "stored scaled code sum", "FP16 record field s"),
+        symbol("encoder_d", "pre-rounding encoder scale", "temporary quantizer value; not stored"),
+        symbol("Σq", "sum of all 32 codes", "computed by the encoder before s is rounded")
+      ];
+    case "Q8_K":
+      return [
+        symbol("w′[i]", "reconstructed weight i", "decoder output lane i, where i is 0…255"),
+        symbol("d", "shared block scale", "FP32 record field d"),
+        symbol("q[i]", "signed code for lane i", "record field qs[i]"),
+        symbol("i", "lane index", "position inside the fixed 256-weight block")
+      ];
+    case "IQ2_XXS":
+      return gridSymbols(
+        "iq2xxs_grid",
+        "8-bit grid-index byte in qs",
+        "7-bit sign index packed in the group’s second uint32",
+        "4-bit s in bits 28…31 of that uint32",
+        "d",
+        "FP16 record field d",
+        ["0.5", "fixed half-step offset", "0.25", "fixed IQ2_XXS normalization"]
+      );
+    case "IQ2_XS":
+      return gridSymbols(
+        "iq2xs_grid",
+        "low nine bits of the group’s uint16 qs word",
+        "upper seven bits of the same qs word, expanded through ksigns_iq2xs",
+        "one nibble from record field scales",
+        "d",
+        "FP16 record field d",
+        ["0.5", "fixed half-step offset", "0.25", "fixed IQ2_XS normalization"]
+      );
+    case "IQ3_XXS":
+      return gridSymbols(
+        "iq3xxs_grid",
+        "one 8-bit index in qs[0…63]",
+        "7-bit sign index packed in qs[64…95], expanded through ksigns_iq2xs",
+        "4-bit s in bits 28…31 of the group metadata word",
+        "d",
+        "FP16 record field d",
+        ["0.5", "fixed half-step offset", "0.5", "fixed IQ3_XXS normalization"]
+      );
+    case "IQ1_S":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the selected group, grid, and lane"),
+        symbol("d", "global block scale", "FP16 record field d"),
+        symbol("group", "32-weight group number", "floor(i / 32), in the range 0…7 for block lane i"),
+        symbol("subgrid", "eight-weight vector number inside the group", "floor((i mod 32) / 8), in the range 0…3"),
+        symbol("s", "three-bit local scale code", "bits 12…14 of qh[group]"),
+        symbol("index", "11-bit table index", "index = qs[4×group + subgrid] | (((qh[group] >> (3×subgrid)) & 7) << 8)"),
+        symbol("signedGrid", "fixed 2048-entry table of signed eight-value vectors", "GGML’s compiled iq1s_grid codebook—not bytes in the file; each lane is −1, 0, or +1, and quantization selects the best table index"),
+        symbol("lane", "position inside the selected eight-value vector", "i mod 8, in the range 0…7; output i = 32×group + 8×subgrid + lane"),
+        symbol("δ", "small signed grid offset", "qh[group] bit 15 chooses −0.125 when set, +0.125 when clear"),
+        symbol("2s + 1", "odd local multiplier", "fixed IQ1_S decode rule applied to the stored scale code s")
+      ];
+    case "IQ3_S":
+      return gridSymbols(
+        "iq3s_grid",
+        "eight low bits from qs plus one matching high bit from qh",
+        "the matching lane bit in record field signs",
+        "one nibble from record field scales",
+        "d",
+        "FP16 record field d",
+        ["1", "fixed odd-scale base", "2", "fixed multiplier applied to s"]
+      );
+    case "IQ2_S":
+      return gridSymbols(
+        "iq2s_grid",
+        "eight low bits from qs[0…31] plus two matching high bits from qh",
+        "the matching mask bit from qs[32…63]",
+        "one nibble from record field scales",
+        "d",
+        "FP16 record field d",
+        ["0.5", "fixed half-step offset", "0.25", "fixed IQ2_S normalization"]
+      );
+    case "IQ4_NL":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("d", "shared block scale", "FP16 record field d"),
+        symbol("nibble", "four-bit codebook index", "the lane’s low or high nibble in qs"),
+        symbol("nonlinearLevel", "fixed 16-entry signed level table", "GGML’s compiled kvalues_iq4nl table, not bytes in this record")
+      ];
+    case "IQ4_XS":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("d", "global block scale", "FP16 record field d"),
+        symbol("ls", "unsigned six-bit local-scale code", "four low bits from scales_l plus two high bits from scales_h"),
+        symbol("32", "local-scale zero bias", "fixed IQ4_XS format constant; it occupies no record bytes"),
+        symbol("nibble", "four-bit codebook index", "the lane’s nibble in qs"),
+        symbol("nonlinearLevel", "fixed 16-entry signed level table", "GGML’s compiled kvalues_iq4nl table")
+      ];
+    case "IQ1_M":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the selected group, grid, and lane"),
+        symbol("embedded_d", "global FP16 scale", "reassembled from the top four bits of four uint16 views of scales[8]"),
+        symbol("s", "three-bit local scale code", "the matching three-bit slice in the lower 12 bits of scales"),
+        symbol("index", "11-bit table index", "eight low bits from qs plus three high bits from the matching qh nibble"),
+        symbol("signedGrid", "fixed 2048-entry table of signed eight-value vectors", "GGML’s compiled iq1s_grid table; each lane is −1, 0, or +1"),
+        symbol("lane", "position inside the selected eight-value vector", "j = 0…7 for the eight weights represented by that index"),
+        symbol("δ", "small signed grid offset", "bit 3 of the matching qh nibble chooses the IQ1_M ±0.125 constant"),
+        symbol("2s + 1", "odd local multiplier", "fixed IQ1_M decode rule applied to s")
+      ];
+    case "TQ1_0":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("d", "shared magnitude", "trailing FP16 record field d"),
+        symbol("base3Digit", "stored ternary digit 0, 1, or 2", "extracted from the lane’s packed byte in qs or qh"),
+        symbol("1", "ternary storage bias", "fixed format constant mapping digits 0/1/2 to −1/0/+1")
+      ];
+    case "TQ2_0":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("d", "shared magnitude", "trailing FP16 record field d"),
+        symbol("twoBitCode", "stored two-bit code 0, 1, or 2", "the lane’s two-bit slice in qs; binary 11 is unused"),
+        symbol("1", "ternary storage bias", "fixed format constant mapping codes 0/1/2 to −1/0/+1")
+      ];
+    case "MXFP4":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("e", "shared E8M0 exponent code", "leading uint8 record field e"),
+        symbol("E8M0_HALF(e)", "decoded half-scale", "GGML helper applied to e, including its e = 0 path"),
+        symbol("nibble", "signed E2M1 FP4 code", "the lane’s low or high nibble in qs"),
+        symbol("doubledE2M1", "fixed doubled FP4 lookup table", "GGML runtime table; the half-scale compensates for the doubled entries")
+      ];
+    case "NVFP4":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("group", "local 16-weight group index", "floor(lane / 16), selecting d[0…3]"),
+        symbol("d[group]", "UE4M3 local-scale code", "record byte d[group]"),
+        symbol("UE4M3(…)", "decoded half-scale", "GGML UE4M3 decode helper"),
+        symbol("nibble", "signed E2M1 FP4 code", "the lane’s low or high nibble in qs"),
+        symbol("doubledE2M1", "fixed doubled FP4 lookup table", "GGML runtime table")
+      ];
+    case "Q1_0":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("signBit", "stored sign selector", "the lane’s bit in record field qs"),
+        symbol("d", "shared positive magnitude", "FP16 record field d"),
+        symbol("+d / −d", "the two reconstruction levels", "selected directly by signBit; no zero level is stored")
+      ];
+    case "Q2_0":
+      return [
+        symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("d", "shared magnitude", "FP16 record field d"),
+        symbol("twoBitCode", "unsigned two-bit code", "the lane’s two-bit slice in qs"),
+        symbol("1", "implicit storage bias", "fixed Q2_0 format constant; it occupies no record bytes")
+      ];
+    default:
+      return [];
+  }
+}
+
+function gridSymbols(
+  table: string,
+  indexSource: string,
+  signSource: string,
+  scaleSource: string,
+  scaleSymbol: string,
+  globalScaleSource: string,
+  constants: readonly [string, string, string, string]
+): readonly GgufQuantSymbol[] {
+  const items = [
+    symbol("w′", "one reconstructed weight", "decoder output for the selected grid lane"),
+    symbol(scaleSymbol, "global block scale", globalScaleSource),
+    symbol("s", "local scale code", scaleSource),
+    symbol("index", "grid-table index", indexSource),
+    symbol("grid", "fixed multi-value magnitude table", `GGML’s compiled ${table} table; it is not stored in this record`),
+    symbol("lane", "position inside the selected grid vector", "the current j position within that table entry"),
+    symbol("sign", "per-lane +1 or −1 multiplier", signSource),
+    symbol(constants[0], constants[1], "fixed format constant; it occupies no record bytes")
+  ];
+  if (constants[2] !== constants[0]) {
+    items.push(
+      symbol(constants[2], constants[3], "fixed format constant; it occupies no record bytes")
+    );
+  } else {
+    items[items.length - 1] = symbol(
+      constants[0],
+      `${constants[1]}; ${constants[3]}`,
+      "the same fixed literal is used twice and occupies no record bytes"
+    );
+  }
+  return items;
+}
+
+function symbol(
+  name: string,
+  meaning: string,
+  source: string
+): GgufQuantSymbol {
+  return { symbol: name, meaning, source };
 }

@@ -20,6 +20,8 @@
   replay starts again from the beginning.
 - Keep completed animation stages at full brightness so the accumulated lesson
   remains readable as later stages play.
+- Trace every symbol in complex GGUF reconstruction formulas back to its exact
+  record field, packed bits, fixed runtime table, lane index, or format constant.
 
 ## 0.3.0
 

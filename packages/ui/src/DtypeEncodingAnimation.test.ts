@@ -256,6 +256,12 @@ describe("GGUF physical animation layouts", () => {
       expect(contract.codes.length).toBeGreaterThanOrEqual(3);
       expect(contract.packing.length).toBeGreaterThanOrEqual(3);
       expect(contract.decode).toBeTruthy();
+      expect(contract.symbols.length).toBeGreaterThanOrEqual(4);
+      for (const item of contract.symbols) {
+        expect(item.symbol).toBeTruthy();
+        expect(item.meaning).toBeTruthy();
+        expect(item.source).toBeTruthy();
+      }
       expect(contract.runtime).toBeTruthy();
       expect(contract.groups.count * contract.groups.values).toBe(
         contract.values
@@ -269,6 +275,34 @@ describe("GGUF physical animation layouts", () => {
     ).toContain("final 32 bytes hold sign masks");
   });
 
+  it("traces every IQ1_S reconstruction symbol to storage or runtime data", () => {
+    const symbols = ggufQuantContract("IQ1_S")?.symbols;
+    expect(symbols?.map((item) => item.symbol)).toEqual([
+      "w′",
+      "d",
+      "group",
+      "subgrid",
+      "s",
+      "index",
+      "signedGrid",
+      "lane",
+      "δ",
+      "2s + 1"
+    ]);
+    expect(symbols?.find((item) => item.symbol === "index")?.source).toContain(
+      "qs[4×group + subgrid]"
+    );
+    expect(
+      symbols?.find((item) => item.symbol === "signedGrid")?.source
+    ).toContain("iq1s_grid");
+    expect(symbols?.find((item) => item.symbol === "lane")?.source).toContain(
+      "32×group + 8×subgrid + lane"
+    );
+    expect(symbols?.find((item) => item.symbol === "δ")?.source).toContain(
+      "bit 15"
+    );
+  });
+
   it("preserves special companion and microscale rounding contracts", () => {
     expect(ggufQuantContract("Q8_1")?.metadata.join(" ")).toContain(
       "rounded to FP16 independently"
@@ -277,5 +311,11 @@ describe("GGUF physical animation layouts", () => {
       "special denormal path for e = 0"
     );
     expect(ggufQuantContract("MXFP4")?.decode).toContain("E8M0_HALF");
+  });
+
+  it("explains Q5 bit-plane assembly as well as its operands", () => {
+    expect(ggufQuantContract("Q5_0")?.symbols.map((item) => item.symbol)).toContain(
+      "join(qh, qs)"
+    );
   });
 });
