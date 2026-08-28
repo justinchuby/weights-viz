@@ -1,5 +1,9 @@
 import { assertRange, ParseError } from "./errors";
-import type { RandomAccessSource } from "./types";
+import {
+  REMOTE_FULL_DOWNLOAD_MAX_BYTES,
+  type RemoteLoadProgressCallback,
+  type RandomAccessSource
+} from "./types";
 
 let nextSourceId = 1;
 
@@ -53,6 +57,7 @@ export class BrowserFileSource implements RandomAccessSource {
 interface HttpSourceOptions {
   fetch?: typeof globalThis.fetch;
   signal?: AbortSignal;
+  onProgress?: RemoteLoadProgressCallback;
 }
 
 export class HttpRangeSource implements RandomAccessSource {
@@ -63,7 +68,12 @@ export class HttpRangeSource implements RandomAccessSource {
   private readonly fetcher: typeof globalThis.fetch;
   private readonly cache = new Map<string, Uint8Array>();
 
-  private constructor(url: string, size: bigint, fetcher: typeof globalThis.fetch) {
+  private constructor(
+    url: string,
+    size: bigint,
+    fetcher: typeof globalThis.fetch,
+    private readonly fullBytes?: Uint8Array
+  ) {
     this.id = `url-${nextSourceId++}`;
     this.url = url;
     this.name = decodeURIComponent(new URL(url).pathname.split("/").pop() || "remote");
@@ -79,6 +89,7 @@ export class HttpRangeSource implements RandomAccessSource {
         headers: { Range: "bytes=0-7" },
         mode: "cors",
         credentials: "omit",
+        cache: "no-store",
         ...(options.signal ? { signal: options.signal } : {})
       });
     } catch (error) {
@@ -92,6 +103,21 @@ export class HttpRangeSource implements RandomAccessSource {
     if (response.status === 404 && isHuggingFaceUrl(url)) {
       throw new ParseError(
         "Hugging Face could not find this file. Check the repository, revision, and filename."
+      );
+    }
+    if (response.status === 200) {
+      const bytes = await readResponseCapped(
+        response,
+        REMOTE_FULL_DOWNLOAD_MAX_BYTES,
+        remoteFileName(url),
+        options.signal,
+        options.onProgress
+      );
+      return new HttpRangeSource(
+        url,
+        BigInt(bytes.byteLength),
+        fetcher,
+        bytes
       );
     }
     if (response.status !== 206) {
@@ -112,7 +138,11 @@ export class HttpRangeSource implements RandomAccessSource {
         `Expected ${probeEnd + 1} probe bytes, received ${probe.byteLength}`
       );
     }
-    const source = new HttpRangeSource(url, BigInt(totalSize), fetcher);
+    const source = new HttpRangeSource(
+      url,
+      BigInt(totalSize),
+      fetcher
+    );
     source.cache.set(`0:${probe.byteLength}`, probe);
     return source;
   }
@@ -124,6 +154,10 @@ export class HttpRangeSource implements RandomAccessSource {
   ): Promise<Uint8Array> {
     assertRange(offset, BigInt(length), this.size, "Remote read");
     if (length === 0) return new Uint8Array();
+    if (this.fullBytes) {
+      const start = Number(offset);
+      return this.fullBytes.slice(start, start + length);
+    }
     const key = `${offset}:${length}`;
     const cached = this.cache.get(key);
     if (cached) return cached.slice();
@@ -134,11 +168,13 @@ export class HttpRangeSource implements RandomAccessSource {
         headers: { Range: `bytes=${offset}-${end}` },
         mode: "cors",
         credentials: "omit",
+        cache: "no-store",
         ...(signal ? { signal } : {})
       });
     } catch (error) {
       throw remoteFetchError(this.url, error);
     }
+
     if (response.status !== 206) {
       throw new ParseError(`Range request failed with HTTP ${response.status}`, offset);
     }
@@ -158,6 +194,67 @@ export class HttpRangeSource implements RandomAccessSource {
     this.cache.set(key, bytes);
     return bytes.slice();
   }
+}
+
+async function readResponseCapped(
+  response: Response,
+  maxBytes: number,
+  fileName: string,
+  signal?: AbortSignal,
+  onProgress?: RemoteLoadProgressCallback
+): Promise<Uint8Array> {
+  const declared = response.headers.get("content-length");
+  const total = declared ? Number(declared) : undefined;
+  if (total !== undefined && total > maxBytes) {
+    await response.body?.cancel();
+    throw ignoredRangeTooLarge(maxBytes);
+  }
+  if (!response.body) throw new ParseError("Remote response has no body");
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  onProgress?.({
+    fileName,
+    loaded: 0,
+    ...(total !== undefined ? { total } : {})
+  });
+  while (true) {
+    signal?.throwIfAborted();
+    const result = await reader.read();
+    if (result.done) break;
+    length += result.value.byteLength;
+    if (length > maxBytes) {
+      await reader.cancel();
+      throw ignoredRangeTooLarge(maxBytes);
+    }
+    chunks.push(result.value);
+    onProgress?.({
+      fileName,
+      loaded: length,
+      ...(total !== undefined ? { total } : {})
+    });
+  }
+
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+function ignoredRangeTooLarge(maxBytes: number): ParseError {
+  return new ParseError(
+    `The server ignored the Range request and returned the entire file. ` +
+      `Automatic full-download fallback is limited to ${maxBytes / 1024 / 1024} MiB ` +
+      `to protect this device. Download the model and open it locally, or use a URL whose server returns HTTP 206.`
+  );
+}
+
+function remoteFileName(url: string): string {
+  return decodeURIComponent(new URL(url).pathname.split("/").pop() || "remote model");
 }
 
 function isHuggingFaceUrl(url: string): boolean {
@@ -180,7 +277,8 @@ export async function fetchRemoteOnnx(
   url: string,
   maxBytes: number,
   signal?: AbortSignal,
-  fetcher: typeof globalThis.fetch = globalThis.fetch.bind(globalThis)
+  fetcher: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
+  onProgress?: RemoteLoadProgressCallback
 ): Promise<MemorySource> {
   const response = await fetcher(url, {
     mode: "cors",
@@ -198,6 +296,13 @@ export async function fetchRemoteOnnx(
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;
+  const total = declared ? Number(declared) : undefined;
+  const fileName = remoteFileName(url);
+  onProgress?.({
+    fileName,
+    loaded: 0,
+    ...(total !== undefined ? { total } : {})
+  });
   while (true) {
     const result = await reader.read();
     if (result.done) break;
@@ -207,6 +312,11 @@ export async function fetchRemoteOnnx(
       throw new ParseError(`Remote ONNX exceeds the ${maxBytes} byte limit`);
     }
     chunks.push(result.value);
+    onProgress?.({
+      fileName,
+      loaded: length,
+      ...(total !== undefined ? { total } : {})
+    });
   }
   const bytes = new Uint8Array(length);
   let offset = 0;

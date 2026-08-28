@@ -85,6 +85,15 @@ export interface RandomAccessSource {
   read(offset: bigint, length: number, signal?: AbortSignal): Promise<Uint8Array>;
 }
 
+export interface RemoteLoadProgress {
+  fileName: string;
+  loaded: number;
+  total?: number;
+}
+
+export type RemoteLoadProgressCallback = (progress: RemoteLoadProgress) => void;
+
 export const DEFAULT_MAX_METADATA_BYTES = 64 * 1024 * 1024;
 export const REMOTE_ONNX_MAX_BYTES = 50 * 1024 * 1024;
+export const REMOTE_FULL_DOWNLOAD_MAX_BYTES = 64 * 1024 * 1024;
 export const SAFETENSORS_INDEX_MAX_BYTES = 64 * 1024 * 1024;

@@ -1,6 +1,11 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type { ParsedModel, TensorRecord, TensorSample } from "@weights-viz/core";
+import type {
+  ParsedModel,
+  RemoteLoadProgress,
+  TensorRecord,
+  TensorSample
+} from "@weights-viz/core";
 import { WeightsExplorer } from "@weights-viz/ui";
 
 type WorkerRequest =
@@ -17,6 +22,7 @@ function App() {
   const [models, setModels] = useState<ParsedModel[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [remoteProgress, setRemoteProgress] = useState<RemoteLoadProgress>();
   const [workerReady, setWorkerReady] = useState(false);
   const [sharedUrls] = useState(modelUrlsFromQuery);
   const [dtypeAtlas, setDtypeAtlas] = useState(dtypeAtlasFromQuery);
@@ -25,16 +31,31 @@ function App() {
   const sharedUrlHandled = useRef(false);
   const nextId = useRef(1);
   const pending = useRef(
-    new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
+    new Map<number, {
+      resolve: (value: unknown) => void;
+      reject: (error: Error) => void;
+      onProgress?: (progress: RemoteLoadProgress) => void;
+    }>()
   );
 
   useEffect(() => {
     const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
     worker.onmessage = (
-      event: MessageEvent<{ id: number; ok: boolean; result?: unknown; error?: string }>
+      event: MessageEvent<{
+        id: number;
+        type?: "progress";
+        ok?: boolean;
+        result?: unknown;
+        error?: string;
+        progress?: RemoteLoadProgress;
+      }>
     ) => {
       const request = pending.current.get(event.data.id);
       if (!request) return;
+      if (event.data.type === "progress" && event.data.progress) {
+        request.onProgress?.(event.data.progress);
+        return;
+      }
       pending.current.delete(event.data.id);
       if (event.data.ok) request.resolve(event.data.result);
       else request.reject(new Error(event.data.error ?? "Worker operation failed"));
@@ -53,7 +74,10 @@ function App() {
     return () => window.removeEventListener("popstate", syncView);
   }, []);
 
-  const request = <T,>(payload: WorkerRequest): Promise<T> =>
+  const request = <T,>(
+    payload: WorkerRequest,
+    onProgress?: (progress: RemoteLoadProgress) => void
+  ): Promise<T> =>
     new Promise((resolve, reject) => {
       if (!workerRef.current) {
         reject(new Error("The parser worker is still starting"));
@@ -62,7 +86,8 @@ function App() {
       const id = nextId.current++;
       pending.current.set(id, {
         resolve: (value) => resolve(value as T),
-        reject
+        reject,
+        ...(onProgress ? { onProgress } : {})
       });
       workerRef.current.postMessage({ ...payload, id });
     });
@@ -71,6 +96,7 @@ function App() {
     if (!files.length) return;
     setBusy(true);
     setError(undefined);
+    setRemoteProgress(undefined);
     try {
       const loaded = await request<ParsedModel[]>({ type: "files", files });
       setModels((current) => [...current, ...loaded]);
@@ -85,9 +111,12 @@ function App() {
     if (!urls.length) return;
     setBusy(true);
     setError(undefined);
+    setRemoteProgress(undefined);
     try {
       const loaded = await Promise.all(
-        urls.map((url) => request<ParsedModel[]>({ type: "url", url }))
+        urls.map((url) =>
+          request<ParsedModel[]>({ type: "url", url }, setRemoteProgress)
+        )
       );
       setModels((current) => [...current, ...loaded.flat()]);
       const pageUrl = new URL(window.location.href);
@@ -100,6 +129,7 @@ function App() {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
+      setRemoteProgress(undefined);
     }
   };
 
@@ -108,14 +138,20 @@ function App() {
     sharedUrlHandled.current = true;
     setBusy(true);
     setError(undefined);
+    setRemoteProgress(undefined);
     void Promise.all(
-      sharedUrls.map((url) => request<ParsedModel[]>({ type: "url", url }))
+      sharedUrls.map((url) =>
+        request<ParsedModel[]>({ type: "url", url }, setRemoteProgress)
+      )
     )
       .then((loaded) => setModels(loaded.flat()))
       .catch((reason) =>
         setError(reason instanceof Error ? reason.message : String(reason))
       )
-      .finally(() => setBusy(false));
+      .finally(() => {
+        setBusy(false);
+        setRemoteProgress(undefined);
+      });
   }, [sharedUrls, workerReady]);
 
   useEffect(() => {
@@ -155,6 +191,7 @@ function App() {
       <WeightsExplorer
         models={models}
         busy={busy}
+        {...(remoteProgress ? { progress: remoteProgress } : {})}
         {...(error ? { error } : {})}
         {...(sharedUrls.length ? { defaultUrl: sharedUrls.join("\n") } : {})}
         defaultCompare={sharedUrls.length > 1}

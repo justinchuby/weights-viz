@@ -39,6 +39,8 @@ self.onmessage = async (
     if (event.data.type === "url") {
       const result = await loadModelUrl(event.data.url, undefined, (source) => {
         sources.set(source.id, source);
+      }, (progress) => {
+        postMessage({ id, type: "progress", progress });
       });
       postMessage({ id, ok: true, result });
       return;

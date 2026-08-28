@@ -39,11 +39,41 @@ describe("HttpRangeSource", () => {
     );
   });
 
-  it("rejects servers that ignore Range", async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response("all"));
+  it("falls back to a bounded full download when a server ignores Range", async () => {
+    const bytes = new Uint8Array([0, 1, 2, 3, 4, 5]);
+    const onProgress = vi.fn();
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(bytes.slice().buffer, {
+        headers: { "content-length": String(bytes.byteLength) }
+      })
+    );
+    const source = await HttpRangeSource.create("https://example.test/model.gguf", {
+      fetch: fetcher,
+      onProgress
+    });
+
+    expect(source.size).toBe(6n);
+    expect(await source.read(2n, 3)).toEqual(new Uint8Array([2, 3, 4]));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenNthCalledWith(1, {
+      fileName: "model.gguf",
+      loaded: 0,
+      total: 6
+    });
+    expect(onProgress).toHaveBeenLastCalledWith({
+      fileName: "model.gguf",
+      loaded: 6,
+      total: 6
+    });
+  });
+
+  it("rejects an ignored Range response that is too large to download safely", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("all", { headers: { "content-length": String(65 * 1024 * 1024) } })
+    );
     await expect(
       HttpRangeSource.create("https://example.test/model.gguf", { fetch: fetcher })
-    ).rejects.toThrow(/must support CORS HTTP Range/);
+    ).rejects.toThrow(/full-download fallback is limited to 64 MiB/);
   });
 
   it("rejects inconsistent Content-Range responses", async () => {
@@ -93,5 +123,34 @@ describe("fetchRemoteOnnx", () => {
     await expect(
       fetchRemoteOnnx("https://example.test/model.onnx", 50, undefined, fetcher)
     ).rejects.toThrow(/exceeds/);
+  });
+
+  it("reports streamed ONNX download progress", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(bytes.slice().buffer, {
+        headers: { "content-length": String(bytes.byteLength) }
+      })
+    );
+    const onProgress = vi.fn();
+
+    await fetchRemoteOnnx(
+      "https://example.test/model.onnx",
+      50,
+      undefined,
+      fetcher,
+      onProgress
+    );
+
+    expect(onProgress).toHaveBeenNthCalledWith(1, {
+      fileName: "model.onnx",
+      loaded: 0,
+      total: 4
+    });
+    expect(onProgress).toHaveBeenLastCalledWith({
+      fileName: "model.onnx",
+      loaded: 4,
+      total: 4
+    });
   });
 });

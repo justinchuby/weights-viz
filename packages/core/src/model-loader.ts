@@ -17,7 +17,8 @@ import {
   type ParsedFile,
   type ParsedModel,
   type Parser,
-  type RandomAccessSource
+  type RandomAccessSource,
+  type RemoteLoadProgressCallback
 } from "./types";
 
 export {
@@ -141,16 +142,17 @@ export async function loadSources(
 export async function loadModelUrl(
   rawUrl: string,
   signal?: AbortSignal,
-  onSource?: (source: RandomAccessSource) => void
+  onSource?: (source: RandomAccessSource) => void,
+  onProgress?: RemoteLoadProgressCallback
 ): Promise<ParsedModel[]> {
   const url = normalizeModelUrl(rawUrl);
   const lowerPath = new URL(url).pathname.toLowerCase();
   if (lowerPath.endsWith(".safetensors.index.json")) {
-    return [await loadRemoteSafeTensorsIndex(url, signal, onSource)];
+    return [await loadRemoteSafeTensorsIndex(url, signal, onSource, onProgress)];
   }
   if (lowerPath.endsWith(".onnx")) {
     return [
-      await loadRemoteOnnx(url, signal, onSource)
+      await loadRemoteOnnx(url, signal, onSource, onProgress)
     ];
   }
   const ggufShard = parseGgufShardName(
@@ -158,10 +160,13 @@ export async function loadModelUrl(
   );
   if (ggufShard) {
     return [
-      await loadRemoteGgufShardFamily(url, ggufShard, signal, onSource)
+      await loadRemoteGgufShardFamily(url, ggufShard, signal, onSource, onProgress)
     ];
   }
-  const source = await HttpRangeSource.create(url, signal ? { signal } : {});
+  const source = await HttpRangeSource.create(url, {
+    ...(signal ? { signal } : {}),
+    ...(onProgress ? { onProgress } : {})
+  });
   onSource?.(source);
   return loadSources([source], signal);
 }
@@ -230,7 +235,8 @@ async function loadRemoteGgufShardFamily(
   url: string,
   shard: GgufShardIdentity,
   signal?: AbortSignal,
-  onSource?: (source: RandomAccessSource) => void
+  onSource?: (source: RandomAccessSource) => void,
+  onProgress?: RemoteLoadProgressCallback
 ): Promise<ParsedModel> {
   if (shard.total > MAX_GGUF_SHARDS) {
     throw new ParseError(
@@ -246,7 +252,10 @@ async function loadRemoteGgufShardFamily(
     const outcomes = await Promise.allSettled(
       indexes.map(async (index) => {
         const filename = `${shard.prefix}-${String(index).padStart(shard.width, "0")}-of-${String(shard.total).padStart(shard.width, "0")}.gguf`;
-        return HttpRangeSource.create(replaceUrlFilename(url, filename), signal ? { signal } : {});
+        return HttpRangeSource.create(replaceUrlFilename(url, filename), {
+          ...(signal ? { signal } : {}),
+          ...(onProgress ? { onProgress } : {})
+        });
       })
     );
     for (const outcome of outcomes) {
@@ -274,12 +283,15 @@ function replaceUrlFilename(url: string, filename: string): string {
 async function loadRemoteOnnx(
   url: string,
   signal?: AbortSignal,
-  onSource?: (source: RandomAccessSource) => void
+  onSource?: (source: RandomAccessSource) => void,
+  onProgress?: RemoteLoadProgressCallback
 ): Promise<ParsedModel> {
   const manifestSource = await fetchRemoteOnnx(
     url,
     REMOTE_ONNX_MAX_BYTES,
-    signal
+    signal,
+    undefined,
+    onProgress
   );
   onSource?.(manifestSource);
   const manifest = await parsers.onnx.parse(
@@ -362,7 +374,8 @@ async function loadSafeTensorsIndex(
 async function loadRemoteSafeTensorsIndex(
   url: string,
   signal?: AbortSignal,
-  onSource?: (source: RandomAccessSource) => void
+  onSource?: (source: RandomAccessSource) => void,
+  onProgress?: RemoteLoadProgressCallback
 ): Promise<ParsedModel> {
   const response = await fetch(url, {
     mode: "cors",
@@ -375,7 +388,10 @@ async function loadRemoteSafeTensorsIndex(
   const bytes = await readResponseCapped(
     response,
     SAFETENSORS_INDEX_MAX_BYTES,
-    "SafeTensors index"
+    "SafeTensors index",
+    signal,
+    onProgress,
+    decodeURIComponent(new URL(url).pathname.split("/").pop() || "model index")
   );
   const index = parseSafeTensorsIndex(bytes);
   const shardNames = orderedShardNames(index.weight_map);
@@ -385,7 +401,10 @@ async function loadRemoteSafeTensorsIndex(
       shardNames.slice(index, index + REMOTE_SHARD_CONCURRENCY).map(async (shardName) => {
         const source = await HttpRangeSource.create(
           new URL(shardName, url).toString(),
-          signal ? { signal } : {}
+          {
+            ...(signal ? { signal } : {}),
+            ...(onProgress ? { onProgress } : {})
+          }
         );
         onSource?.(source);
         return parsers.safetensors.parse(source, signal ? { signal } : {});
@@ -417,7 +436,10 @@ function orderedShardNames(weightMap: Record<string, string>): string[] {
 async function readResponseCapped(
   response: Response,
   maxBytes: number,
-  label: string
+  label: string,
+  signal?: AbortSignal,
+  onProgress?: RemoteLoadProgressCallback,
+  fileName = label
 ): Promise<Uint8Array> {
   const declared = response.headers.get("content-length");
   if (declared && Number(declared) > maxBytes) {
@@ -428,7 +450,14 @@ async function readResponseCapped(
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;
+  const total = declared ? Number(declared) : undefined;
+  onProgress?.({
+    fileName,
+    loaded: 0,
+    ...(total !== undefined ? { total } : {})
+  });
   while (true) {
+    signal?.throwIfAborted();
     const result = await reader.read();
     if (result.done) break;
     length += result.value.byteLength;
@@ -437,6 +466,11 @@ async function readResponseCapped(
       throw new ParseError(`${label} exceeds the ${maxBytes} byte limit`);
     }
     chunks.push(result.value);
+    onProgress?.({
+      fileName,
+      loaded: length,
+      ...(total !== undefined ? { total } : {})
+    });
   }
   const bytes = new Uint8Array(length);
   let offset = 0;

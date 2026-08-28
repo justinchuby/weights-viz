@@ -29,6 +29,7 @@ import type {
   ModelComparison,
   ParsedFile,
   ParsedModel,
+  RemoteLoadProgress,
   TensorComparison,
   TensorComparisonStatus,
   TensorRecord,
@@ -70,6 +71,7 @@ import {
 interface WeightsExplorerProps {
   models: ParsedModel[];
   busy?: boolean;
+  progress?: RemoteLoadProgress;
   error?: string;
   onChooseFiles?: () => void;
   onFilesSelected?: (files: File[]) => void;
@@ -112,6 +114,7 @@ function embeddedHostLabel(): string | undefined {
 export function WeightsExplorer({
   models,
   busy = false,
+  progress,
   error,
   onChooseFiles,
   onFilesSelected,
@@ -372,7 +375,30 @@ export function WeightsExplorer({
           </button>
         </div>
       )}
-      {busy && <div className="wv-progress"><span /></div>}
+      {busy && (
+        <div
+          className={`wv-progress${progress?.total ? " determinate" : ""}`}
+          role="progressbar"
+          aria-label={progress ? `Downloading ${progress.fileName}` : "Loading model"}
+          aria-valuemin={0}
+          {...(progress?.total
+            ? {
+                "aria-valuemax": progress.total,
+                "aria-valuenow": progress.loaded
+              }
+            : {})}
+        >
+          <span
+            {...(progress?.total
+              ? {
+                  style: {
+                    width: `${Math.min(100, (progress.loaded / progress.total) * 100)}%`
+                  }
+                }
+              : {})}
+          />
+        </div>
+      )}
 
       {dtypeAtlasOpen ? (
         <DtypeAtlas
@@ -386,31 +412,45 @@ export function WeightsExplorer({
           <div className="wv-empty-grid" />
           <div className="wv-empty-content">
             <div className="wv-file-mark">01</div>
-            <h2>{busy ? "Loading model metadata…" : "See what your model is made of."}</h2>
+            <h2>
+              {busy
+                ? progress
+                  ? `Downloading ${progress.fileName}…`
+                  : "Loading model metadata…"
+                : "See what your model is made of."}
+            </h2>
             <p>
               {busy
-                ? "Reading file headers and tensor indexes. Large sharded models may take a moment."
+                ? progress
+                  ? downloadProgressText(progress)
+                  : "Reading file headers and tensor indexes. Large sharded models may take a moment."
                 : intro ??
                   "Drop GGUF, SafeTensors, or ONNX files here. Files stay on this device; remote models use byte-range requests."}
             </p>
-            {!busy && onFilesSelected ? (
-              <FilePicker large onFilesSelected={onFilesSelected} onPickerResult={setPickerBlocked}>
-                Choose model files
-              </FilePicker>
-            ) : !busy && onChooseFiles ? (
-              <button className="wv-button primary large" onClick={onChooseFiles}>
-                Choose model files
-              </button>
-            ) : null}
             {!busy && (
-              <button
-                className="wv-button wv-icon-label wv-empty-atlas"
-                type="button"
-                onClick={() => setDtypeAtlas(true)}
-              >
-                <BookOpen className="wv-icon" aria-hidden="true" />
-                Explore all dtypes
-              </button>
+              <div className="wv-empty-actions">
+                {onFilesSelected ? (
+                  <FilePicker
+                    large
+                    onFilesSelected={onFilesSelected}
+                    onPickerResult={setPickerBlocked}
+                  >
+                    Choose model files
+                  </FilePicker>
+                ) : onChooseFiles ? (
+                  <button className="wv-button primary large" onClick={onChooseFiles}>
+                    Choose model files
+                  </button>
+                ) : null}
+                <button
+                  className="wv-button wv-icon-label wv-empty-atlas"
+                  type="button"
+                  onClick={() => setDtypeAtlas(true)}
+                >
+                  <BookOpen className="wv-icon" aria-hidden="true" />
+                  Explore all dtypes
+                </button>
+              </div>
             )}
           </div>
         </section>
@@ -689,6 +729,13 @@ export function WeightsExplorer({
       )}
     </main>
   );
+}
+
+function downloadProgressText(progress: RemoteLoadProgress): string {
+  const loaded = formatBytes(BigInt(progress.loaded));
+  if (!progress.total) return `${loaded} downloaded`;
+  const percent = Math.min(100, Math.round((progress.loaded / progress.total) * 100));
+  return `${loaded} of ${formatBytes(BigInt(progress.total))} downloaded (${percent}%)`;
 }
 
 type ComparisonFilter = "all" | "changed" | "left-only" | "right-only";
