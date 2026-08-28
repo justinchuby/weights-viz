@@ -14,6 +14,8 @@
 - Give every complex GGML block format a dedicated ABI contract lesson covering
   fixed grouping, exact struct fields, metadata derivation, code semantics,
   bit-plane or codebook packing, and kernel reconstruction.
+- Map selected K-quant sub-block scales and minima to their exact `scales[]`
+  array indices, record byte offsets, and packed bit ranges.
 
 ## 0.3.0
 

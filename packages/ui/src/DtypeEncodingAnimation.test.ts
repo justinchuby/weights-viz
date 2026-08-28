@@ -14,7 +14,11 @@ import {
   GGUF_QUANT_CONTRACT_DTYPES,
   ggufQuantContract
 } from "./gguf-quant-contracts";
-import { isKQuantDtype, K_QUANT_LAYOUTS } from "./KQuantAnimation";
+import {
+  isKQuantDtype,
+  K_QUANT_LAYOUTS,
+  kQuantMetadataBytes
+} from "./KQuantAnimation";
 import { ggufStorageLayout } from "./gguf-storage-layouts";
 import { createDtypeEducation } from "./dtype-education";
 
@@ -144,6 +148,61 @@ describe("K-quant animation layouts", () => {
       scaleBits: 6,
       minBits: 6
     });
+  });
+
+  it("maps selected sub-block metadata to exact scales bytes and bits", () => {
+    expect(kQuantMetadataBytes("Q2_K", 0)).toEqual([
+      {
+        index: 0,
+        segments: [
+          { label: "s[0]", from: 0, to: 3, tone: "scale" },
+          { label: "m[0]", from: 4, to: 7, tone: "minimum" }
+        ]
+      }
+    ]);
+    expect(kQuantMetadataBytes("Q3_K", 12)).toEqual([
+      {
+        index: 4,
+        segments: [
+          { label: "s[12] low 4", from: 4, to: 7, tone: "scale" }
+        ]
+      },
+      {
+        index: 8,
+        segments: [
+          { label: "s[12] high 2", from: 6, to: 7, tone: "scale" }
+        ]
+      }
+    ]);
+    expect(kQuantMetadataBytes("Q4_K", 4)).toEqual([
+      {
+        index: 8,
+        segments: [
+          { label: "s[4] low 4", from: 0, to: 3, tone: "scale" },
+          { label: "m[4] low 4", from: 4, to: 7, tone: "minimum" }
+        ]
+      },
+      {
+        index: 0,
+        segments: [
+          { label: "s[4] high 2", from: 6, to: 7, tone: "scale" }
+        ]
+      },
+      {
+        index: 4,
+        segments: [
+          { label: "m[4] high 2", from: 6, to: 7, tone: "minimum" }
+        ]
+      }
+    ]);
+    expect(kQuantMetadataBytes("Q6_K", 15)).toEqual([
+      {
+        index: 15,
+        segments: [
+          { label: "signed s[15]", from: 0, to: 7, tone: "scale" }
+        ]
+      }
+    ]);
   });
 });
 

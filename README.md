@@ -41,7 +41,8 @@ model file. GGUF quantization lessons also trace conversion parameter selection,
 fused dequantized matrix operations, and architecture-specific kernel
 optimizations. K-quant lessons open each 256-weight super-block to show its
 fixed sub-block hierarchy, compressed local scales/minima, code bit-planes,
-physical byte order, and reconstruction formula; IQ, ternary, companion, and
+physical byte order, selected sub-block metadata down to exact `scales[]`
+byte/bit positions, and reconstruction formula; IQ, ternary, companion, and
 microscaled FP4 records receive the same contract-level treatment.
 
 ## Opening local files

@@ -19,6 +19,16 @@ export interface KQuantLayout {
   sections: Array<{ label: string; bytes: number; tone: "global" | "local" | "codes" }>;
 }
 
+export interface KQuantMetadataByte {
+  index: number;
+  segments: Array<{
+    label: string;
+    from: number;
+    to: number;
+    tone: "scale" | "minimum";
+  }>;
+}
+
 export const K_QUANT_LAYOUTS: Record<KQuantLayout["dtype"], KQuantLayout> = {
   Q2_K: {
     dtype: "Q2_K",
@@ -225,23 +235,26 @@ export function KQuantAnimation({ dtype }: { dtype: KQuantLayout["dtype"] }) {
 
           <ChevronRight className="wv-kquant-down" aria-hidden="true" />
 
-          <div className="wv-kquant-hierarchy">
-            <div className="wv-kquant-global-meta">
-              <span>FP16 super-block metadata</span>
-              <strong>{affine ? "d + dmin" : "d"}</strong>
-              <small>{globalDerivation(dtype)}</small>
+          <div className="wv-kquant-metadata-stage">
+            <div className="wv-kquant-hierarchy">
+              <div className="wv-kquant-global-meta">
+                <span>FP16 super-block metadata</span>
+                <strong>{affine ? "d + dmin" : "d"}</strong>
+                <small>{globalDerivation(dtype)}</small>
+              </div>
+              <ChevronRight aria-hidden="true" />
+              <div className="wv-kquant-local-meta">
+                <span>tiny metadata for sub {selectedSubBlock}</span>
+                <strong>
+                  {layout.scaleBits}-bit s[{selectedSubBlock}]
+                  {affine ? ` + ${layout.minBits}-bit m[${selectedSubBlock}]` : ""}
+                </strong>
+                <small>
+                  {localDerivation(dtype)}
+                </small>
+              </div>
             </div>
-            <ChevronRight aria-hidden="true" />
-            <div className="wv-kquant-local-meta">
-              <span>tiny metadata for sub {selectedSubBlock}</span>
-              <strong>
-                {layout.scaleBits}-bit s[{selectedSubBlock}]
-                {affine ? ` + ${layout.minBits}-bit m[${selectedSubBlock}]` : ""}
-              </strong>
-              <small>
-                {localDerivation(dtype)}
-              </small>
-            </div>
+            <KQuantMetadataMap dtype={dtype} group={selectedSubBlock} />
           </div>
 
           <ChevronRight className="wv-kquant-down" aria-hidden="true" />
@@ -306,6 +319,196 @@ export function KQuantAnimation({ dtype }: { dtype: KQuantLayout["dtype"] }) {
       />
     </section>
   );
+}
+
+function KQuantMetadataMap({
+  dtype,
+  group
+}: {
+  dtype: KQuantLayout["dtype"];
+  group: number;
+}) {
+  const bytes = kQuantMetadataBytes(dtype, group);
+  const sections = K_QUANT_LAYOUTS[dtype].sections;
+  const scalesIndex = sections.findIndex(({ label }) =>
+    label.startsWith("scales:")
+  );
+  if (scalesIndex < 0) {
+    throw new Error(`Missing ${dtype} scales field`);
+  }
+  const fieldOffset = sections
+    .slice(0, scalesIndex)
+    .reduce((total, section) => total + section.bytes, 0);
+
+  return (
+    <div className="wv-kquant-bit-map">
+      <header>
+        <span>
+          <strong>Where sub {group} metadata is stored</strong>
+          <small>
+            <code>scales</code> field starts at record byte {fieldOffset}
+          </small>
+        </span>
+        <em>{metadataEncoding(dtype)}</em>
+      </header>
+      <div>
+        {bytes.map((byte) => (
+          <div className="wv-kquant-meta-byte" key={byte.index}>
+            <header>
+              <code>scales[{byte.index}]</code>
+              <small>record byte {fieldOffset + byte.index}</small>
+            </header>
+            <div className="wv-kquant-meta-bits">
+              {Array.from({ length: 8 }, (_, index) => 7 - index).map((bit) => {
+                const segment = byte.segments.find(
+                  ({ from, to }) => bit >= from && bit <= to
+                );
+                return (
+                  <span
+                    aria-label={
+                      segment
+                        ? `bit ${bit}, ${segment.label}`
+                        : `bit ${bit}, metadata for another sub-block`
+                    }
+                    className={segment?.tone ?? "other"}
+                    key={bit}
+                    title={
+                      segment?.label ?? "Used by another sub-block in this packed byte"
+                    }
+                  >
+                    <small>{bit}</small>
+                    <b>{segment ? shortMetadataLabel(segment.label) : "·"}</b>
+                  </span>
+                );
+              })}
+            </div>
+            <ul>
+              {byte.segments.map((segment) => (
+                <li className={segment.tone} key={`${segment.label}:${segment.from}`}>
+                  bits {segment.from === segment.to ? segment.from : `${segment.from}…${segment.to}`} → {segment.label}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <small className="wv-kquant-bit-note">
+        <b>s</b> = selected local scale bits · <b>m</b> = selected local minimum
+        bits · <b>·</b> = bits shared by another sub-block
+      </small>
+    </div>
+  );
+}
+
+export function kQuantMetadataBytes(
+  dtype: KQuantLayout["dtype"],
+  group: number
+): KQuantMetadataByte[] {
+  const layout = K_QUANT_LAYOUTS[dtype];
+  if (!Number.isInteger(group) || group < 0 || group >= layout.subBlocks) {
+    throw new RangeError(`Invalid ${dtype} sub-block ${group}`);
+  }
+  if (dtype === "Q2_K") {
+    return [
+      {
+        index: group,
+        segments: [
+          { label: `s[${group}]`, from: 0, to: 3, tone: "scale" },
+          { label: `m[${group}]`, from: 4, to: 7, tone: "minimum" }
+        ]
+      }
+    ];
+  }
+  if (dtype === "Q3_K") {
+    const quarter = Math.floor(group / 4);
+    const lane = group % 4;
+    const lowIndex = group < 8 ? group : group - 8;
+    return [
+      {
+        index: lowIndex,
+        segments: [
+          {
+            label: `s[${group}] low 4`,
+            from: group < 8 ? 0 : 4,
+            to: group < 8 ? 3 : 7,
+            tone: "scale"
+          }
+        ]
+      },
+      {
+        index: 8 + lane,
+        segments: [
+          {
+            label: `s[${group}] high 2`,
+            from: quarter * 2,
+            to: quarter * 2 + 1,
+            tone: "scale"
+          }
+        ]
+      }
+    ];
+  }
+  if (dtype === "Q4_K" || dtype === "Q5_K") {
+    if (group < 4) {
+      return [
+        {
+          index: group,
+          segments: [
+            { label: `s[${group}]`, from: 0, to: 5, tone: "scale" }
+          ]
+        },
+        {
+          index: group + 4,
+          segments: [
+            { label: `m[${group}]`, from: 0, to: 5, tone: "minimum" }
+          ]
+        }
+      ];
+    }
+    return [
+      {
+        index: group + 4,
+        segments: [
+          { label: `s[${group}] low 4`, from: 0, to: 3, tone: "scale" },
+          { label: `m[${group}] low 4`, from: 4, to: 7, tone: "minimum" }
+        ]
+      },
+      {
+        index: group - 4,
+        segments: [
+          { label: `s[${group}] high 2`, from: 6, to: 7, tone: "scale" }
+        ]
+      },
+      {
+        index: group,
+        segments: [
+          { label: `m[${group}] high 2`, from: 6, to: 7, tone: "minimum" }
+        ]
+      }
+    ];
+  }
+  return [
+    {
+      index: group,
+      segments: [
+        { label: `signed s[${group}]`, from: 0, to: 7, tone: "scale" }
+      ]
+    }
+  ];
+}
+
+function metadataEncoding(dtype: KQuantLayout["dtype"]): string {
+  if (dtype === "Q2_K") return "one byte: mmmm ssss";
+  if (dtype === "Q3_K") return "6 bits assembled from two bytes";
+  if (dtype === "Q4_K" || dtype === "Q5_K") {
+    return "6-bit s and m packed across scales[12]";
+  }
+  return "one signed int8 byte";
+}
+
+function shortMetadataLabel(label: string): string {
+  if (label.includes("m[")) return "m";
+  return "s";
 }
 
 function signedScaleLabel(dtype: KQuantLayout["dtype"]): string {
