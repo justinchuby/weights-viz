@@ -18,6 +18,8 @@
   array indices, record byte offsets, and packed bit ranges.
 - Stop dtype lesson autoplay on its final step instead of looping; explicit
   replay starts again from the beginning.
+- Keep completed animation stages at full brightness so the accumulated lesson
+  remains readable as later stages play.
 
 ## 0.3.0
 

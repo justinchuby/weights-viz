@@ -120,7 +120,11 @@ export function Q40DecodeAnimation() {
           announce={!player.playing}
         />
 
-        <div className={`wv-q4-scale-rule${step === 0 ? " active" : ""}`}>
+        <div
+          className={`wv-q4-scale-rule${step === 0 ? " active" : ""}${
+            step > 0 ? " complete" : ""
+          }`}
+        >
           <code>d = signedMaxAbs(block) / −8</code>
           <span>
             Here the largest magnitude is <strong>−2.00</strong>, so the stored
