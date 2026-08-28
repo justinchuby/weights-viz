@@ -59,7 +59,7 @@ jobs:
         run: |
           if [ "$PRERELEASE" = "true" ]; then
             pnpm --filter weights-viz run build
-            pnpm --filter weights-viz exec vsce package \
+            pnpm --dir apps/vscode exec vsce package \
               --pre-release \
               --no-dependencies \
               --out dist/weights-viz.vsix
@@ -74,7 +74,7 @@ jobs:
           if [ "$PRERELEASE" = "true" ]; then
             extra_args+=(--pre-release)
           fi
-          pnpm --filter weights-viz exec vsce publish \
+          pnpm --dir apps/vscode exec vsce publish \
             --packagePath dist/weights-viz.vsix \
             --pat "$VSCE_PAT" \
             --skip-duplicate \
