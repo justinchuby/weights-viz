@@ -57,6 +57,19 @@ describe("dtype animation coverage", () => {
     expect(ggufQuantContract("IQ4_NL")?.codes.join(" ")).toContain(
       "nonlinear level"
     );
+    const iq4Nl = ggufQuantContract("IQ4_NL");
+    expect(iq4Nl?.symbols.find(({ symbol }) => symbol === "group")?.source).toContain(
+      "whole 32-weight record"
+    );
+    expect(iq4Nl?.symbols.find(({ symbol }) => symbol === "lane")?.source).toContain(
+      "rather than a CPU/SIMD lane"
+    );
+    expect(iq4Nl?.packing).toContain(
+      "lane 16…31 → high nibble of qs[lane − 16]"
+    );
+    expect(iq4Nl?.worked.stages[0].detail).toContain(
+      "0 × 32 + 25 = weight 25"
+    );
   });
 
   it("uses encoding-specific stories for edge-case scalar and block types", () => {

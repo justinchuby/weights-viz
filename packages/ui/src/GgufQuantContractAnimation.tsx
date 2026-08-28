@@ -72,12 +72,20 @@ export function GgufQuantContractAnimation({ dtype }: { dtype: string }) {
             <Fact label="Block" value={`${contract.values} weights`} />
             <Fact label="Record" value={`${contract.bytes} bytes`} />
             <Fact
-              label="Selected group"
-              value={`${selection.group} · ${contract.groups.label}`}
+              label={dtype === "IQ4_NL" ? "Group" : "Selected group"}
+              value={
+                dtype === "IQ4_NL"
+                  ? "0 = the whole 32-weight block"
+                  : `${selection.group} · ${contract.groups.label}`
+              }
             />
             <Fact
-              label="Group position"
-              value={`${selection.lane} → w[${selection.weight}]`}
+              label={dtype === "IQ4_NL" ? "Lane inside group" : "Group position"}
+              value={
+                dtype === "IQ4_NL"
+                  ? `25 → i = 0×32 + 25 = ${selection.weight}`
+                  : `${selection.lane} → w[${selection.weight}]`
+              }
             />
           </div>
 
@@ -87,7 +95,7 @@ export function GgufQuantContractAnimation({ dtype }: { dtype: string }) {
                 className={group === selection.group ? "selected" : ""}
                 key={group}
               >
-                <b>{contract.groups.count === 1 ? "block" : `g${group}`}</b>
+                <b>{`group ${group}`}</b>
                 <small>
                   {group * contract.groups.values}…
                   {(group + 1) * contract.groups.values - 1}

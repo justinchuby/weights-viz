@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Define IQ4_NL `group`, `lane`, and record-local `i` before use, including
+  the exact lane-to-low/high-nibble mapping and a concrete lane 25 example.
+
 ## 0.4.0
 
 - Align the homepage actions and show streamed remote-download bytes, totals, and

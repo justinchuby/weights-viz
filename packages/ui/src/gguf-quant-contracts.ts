@@ -246,9 +246,9 @@ const CONTRACTS: Record<string, GgufQuantContract> = {
     1,
     32,
     "one shared nonlinear range",
-    ["one FP16 d serves 32 weights", "conversion searches d and nearest fixed levels", "the 16-level table is part of the runtime ABI"],
-    ["a nibble selects one signed nonlinear level", "levels = −127, −104, −83, −65, −49, −35, −22, −10, 1, 13, 25, 38, 53, 69, 89, 113", "no sign mask and no zero-point"],
-    ["qs[j].low → index j", "qs[j].high → index j + 16", "16 split-half nibble bytes"],
+    ["group 0 is the entire 32-weight record; all lanes 0…31 share its FP16 d", "conversion searches d and nearest fixed levels", "the 16-level table is part of the runtime ABI"],
+    ["lane = i ∈ [0, 31] is the weight’s position inside group 0, not a CPU/SIMD lane", "a nibble selects one signed nonlinear level", "levels = −127, −104, −83, −65, −49, −35, −22, −10, 1, 13, 25, 38, 53, 69, 89, 113", "no sign mask and no zero-point"],
+    ["lane 0…15 → low nibble of qs[lane]", "lane 16…31 → high nibble of qs[lane − 16]", "16 split-half nibble bytes store all 32 lanes"],
     "w′ = d × nonlinearLevel[nibble]",
     "The nonuniform table spends more resolution near zero while retaining large-magnitude endpoints."
   ),
@@ -642,8 +642,8 @@ function workedExample(dtype: string): GgufQuantWorkedExample {
         0,
         25,
         25,
-        "Select source weight 25 in the only 32-weight nonlinear group.",
-        "Use FP16 d and select the nearest compiled nonlinearLevel through lane 25’s nibble.",
+        "There is one group: group 0 = weights 0…31. Select lane 25, so i = group × 32 + lane = 0 × 32 + 25 = weight 25.",
+        "Use group 0’s shared FP16 d. Lane 25 is in the second half, so its code is the high nibble of qs[25 − 16] = qs[9].",
         [
           access("d", "0", "all 16 bits", "read the shared scale"),
           access("qs", "9", "bits 4…7", "read lane 25’s nibble")
@@ -995,6 +995,9 @@ function symbolOrigins(dtype: string): readonly GgufQuantSymbol[] {
     case "IQ4_NL":
       return [
         symbol("w′", "one reconstructed weight", "decoder output for the current lane"),
+        symbol("i", "weight index inside this record", "i ∈ [0, 31]; IQ4_NL stores 32 weights per record"),
+        symbol("group", "metadata-sharing group number", "IQ4_NL has exactly one group: group 0 is the whole 32-weight record and shares d"),
+        symbol("lane", "weight position inside group 0", "lane ∈ [0, 31], lane = i, and this is a storage coordinate rather than a CPU/SIMD lane"),
         symbol("d", "shared block scale", "FP16 record field d"),
         symbol("nibble", "four-bit codebook index", "the lane’s low or high nibble in qs"),
         symbol("nonlinearLevel", "fixed 16-entry signed level table", "GGML’s compiled kvalues_iq4nl table, not bytes in this record")
