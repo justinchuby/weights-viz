@@ -127,10 +127,9 @@ to browse its GGUF, SafeTensors, and ONNX files, paste a model URL, or run
 
 Local files never leave the device.
 
-The web app is also mirrored at
+The repository includes automatic deployment to
 [Hugging Face Spaces](https://huggingface.co/spaces/justinchuby/weights-viz).
-Repository maintainers can enable automatic Space deployment by adding a
-write-capable `HF_TOKEN` Actions secret.
+Add a write-capable `HF_TOKEN` Actions secret to create and update the Space.
 
 ## Development
 
