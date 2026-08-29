@@ -11,7 +11,6 @@ concurrency:
 
 jobs:
   deploy:
-    if: ${{ secrets.HF_TOKEN != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,17 +18,26 @@ jobs:
       HF_SPACE: justinchuby/weights-viz
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
+      - name: Deployment credentials not configured
+        if: ${{ env.HF_TOKEN == '' }}
+        run: echo "Add the HF_TOKEN repository secret to enable Space deployment."
       - uses: actions/checkout@v7
+        if: ${{ env.HF_TOKEN != '' }}
       - uses: pnpm/action-setup@v6
+        if: ${{ env.HF_TOKEN != '' }}
         with:
           version: 11.24.0
       - uses: actions/setup-node@v7
+        if: ${{ env.HF_TOKEN != '' }}
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @weights-viz/web build
+      - if: ${{ env.HF_TOKEN != '' }}
+        run: pnpm install --frozen-lockfile
+      - if: ${{ env.HF_TOKEN != '' }}
+        run: pnpm --filter @weights-viz/web build
       - name: Create Space if needed
+        if: ${{ env.HF_TOKEN != '' }}
         run: |
           status="$(
             curl --silent --output /tmp/hf-create.json --write-out '%{http_code}' \
@@ -43,6 +51,7 @@ jobs:
             exit 1
           fi
       - name: Publish static build
+        if: ${{ env.HF_TOKEN != '' }}
         working-directory: apps/web/dist
         run: |
           cp ../../../.huggingface/README.md README.md
