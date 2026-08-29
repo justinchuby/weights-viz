@@ -280,8 +280,9 @@ export function WeightsExplorer({
         </div>
         <div className="wv-actions">
           <button
-            className={`wv-button wv-icon-label${dtypeAtlasOpen ? " active" : ""}`}
+            className={`wv-button wv-icon-label wv-dtypes-button${dtypeAtlasOpen ? " active" : ""}`}
             type="button"
+            title="Explore dtypes"
             aria-pressed={dtypeAtlasOpen}
             onClick={() => setDtypeAtlas(!dtypeAtlasOpen)}
           >
@@ -289,7 +290,7 @@ export function WeightsExplorer({
             <span>Dtypes</span>
           </button>
           <a
-            className="wv-icon-button"
+            className="wv-icon-button wv-source-button"
             href="https://github.com/justinchuby/weights-viz"
             target="_blank"
             rel="noreferrer"
@@ -315,19 +316,19 @@ export function WeightsExplorer({
           ) : null}
           {onOpenUrl && (
             <button
-              className={`wv-icon-button${urlOpen ? " active" : ""}`}
+              className={`wv-button primary wv-icon-label${urlOpen ? " active" : ""}`}
               type="button"
               title="Load model URLs"
-              aria-label="Load model URLs"
               aria-expanded={urlOpen}
               onClick={() => setUrlOpen((open) => !open)}
             >
               <Link2 className="wv-icon" aria-hidden="true" />
+              <span>Link</span>
             </button>
           )}
           {installAvailable && onInstall && (
             <button
-              className="wv-icon-button"
+              className="wv-icon-button wv-install-button"
               type="button"
               title="Install app"
               aria-label="Install app"

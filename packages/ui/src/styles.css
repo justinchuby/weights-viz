@@ -784,6 +784,9 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 }
 
 @media (max-width: 700px) {
+  .wv-source-button { display: none; }
+  .wv-dtypes-button { width: 34px; height: 34px; padding: 0; }
+  .wv-dtypes-button > span { display: none; }
   .wv-dtype-backdrop { padding: 10px; }
   .wv-dtype-dialog { max-height: 94vh; }
   .wv-dtype-head, .wv-dtype-body { padding: 14px; }
@@ -814,6 +817,10 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
   .wv-atlas-filters { flex: 1; overflow-x: auto; }
   .wv-atlas-toolbar > span { align-self: center; }
   .wv-empty-actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 380px) {
+  .wv-install-button { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
