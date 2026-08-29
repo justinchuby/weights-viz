@@ -1,0 +1,55 @@
+name: Deploy Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: hugging-face-space
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: ${{ secrets.HF_TOKEN != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      HF_SPACE: justinchuby/weights-viz
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.24.0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @weights-viz/web build
+      - name: Create Space if needed
+        run: |
+          status="$(
+            curl --silent --output /tmp/hf-create.json --write-out '%{http_code}' \
+              --request POST https://huggingface.co/api/repos/create \
+              --header "Authorization: Bearer ${HF_TOKEN}" \
+              --header "Content-Type: application/json" \
+              --data "{\"name\":\"${HF_SPACE#*/}\",\"type\":\"space\",\"sdk\":\"static\",\"private\":false}"
+          )"
+          if [ "$status" != "200" ] && [ "$status" != "409" ]; then
+            cat /tmp/hf-create.json
+            exit 1
+          fi
+      - name: Publish static build
+        working-directory: apps/web/dist
+        run: |
+          cp ../../../.huggingface/README.md README.md
+          git init --initial-branch=main
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Deploy ${GITHUB_SHA}"
+          git remote add origin "https://oauth2:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}"
+          git push --force origin main

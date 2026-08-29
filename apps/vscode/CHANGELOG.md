@@ -1,4 +1,13 @@
-# Changelog
+# Change Log
+
+## Unreleased
+
+- Use Hugging Face's Xet reconstruction protocol for public Hub files so large
+  models remain readable when iPhone Safari receives HTTP 200 from the Xet
+  bridge instead of the requested Range response.
+- Let web users enter a Hugging Face repository name, browse supported model
+  files, and open one without copying a file URL.
+- Add automatic static deployment to Hugging Face Spaces.
 
 ## Unreleased
 

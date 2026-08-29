@@ -96,8 +96,9 @@ are never stored in the service-worker cache.
 
 ## Remote files
 
-Paste a public model URL into the web app or run **Weights Viz: Open Model URL**
-in VS Code.
+Enter a public Hugging Face repository such as `unsloth/Qwen3.8-27B-GGUF`
+to browse its GGUF, SafeTensors, and ONNX files, paste a model URL, or run
+**Weights Viz: Open Model URL** in VS Code.
 
 - Share a web visualization by passing the model URL as `?url=...`; the app
   loads it automatically and keeps successful URL loads in the address bar.
@@ -105,11 +106,11 @@ in VS Code.
 - Load any number of remote models by repeating the parameter:
   `?url=<model-a>&url=<model-b>&url=<model-c>`. The URL field also accepts
   multiple links separated by spaces or newlines.
-- GGUF and SafeTensors are read with progressive HTTP Range requests. Only the
-  header, tensor directory, and explicitly requested sample ranges are fetched.
+- GGUF and SafeTensors are read progressively. Only the header, tensor
+  directory, and explicitly requested sample ranges are fetched.
 - Hugging Face `.../blob/...` file-page links are converted automatically to
-  CORS-compatible `.../resolve/...` byte-range URLs. Repository home pages do
-  not identify a file; choose a model file under **Files and versions** first.
+  file download locations. Xet-backed files use Hugging Face's reconstruction
+  protocol, avoiding Safari's unreliable Range handling on Xet bridge redirects.
 - Public Hugging Face files work directly. Gated/private repositories require
   authentication, so download those files locally and open them from disk.
 - SafeTensors index URLs and standard sharded GGUF URLs resolve sibling shards
@@ -118,13 +119,18 @@ in VS Code.
   Referenced external-data layouts are inferred from initializer offsets,
   lengths, shapes, and dtypes without opening the `.data` files; the byte map
   shows those physical address spaces rather than the protobuf container.
-- The static web app has no proxy. The origin must allow CORS, expose the
+- For non-Hugging Face URLs, the static web app has no proxy. The origin must allow CORS, expose the
   `Content-Range` response header, and return valid `206 Partial Content`
   responses. A clear error is shown when these requirements are not met.
 - Remote requests omit credentials and do not support custom authorization
   headers in the first release.
 
 Local files never leave the device.
+
+The web app is also mirrored at
+[Hugging Face Spaces](https://huggingface.co/spaces/justinchuby/weights-viz).
+Repository maintainers can enable automatic Space deployment by adding a
+write-capable `HF_TOKEN` Actions secret.
 
 ## Development
 

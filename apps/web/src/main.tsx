@@ -1,10 +1,11 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import type {
-  ParsedModel,
-  RemoteLoadProgress,
-  TensorRecord,
-  TensorSample
+import {
+  listHuggingFaceModelFiles,
+  type ParsedModel,
+  type RemoteLoadProgress,
+  type TensorRecord,
+  type TensorSample
 } from "@weights-viz/core";
 import { WeightsExplorer } from "@weights-viz/ui";
 
@@ -204,6 +205,9 @@ function App() {
           });
         }}
         onFilesSelected={(files) => void loadFiles(files)}
+        onBrowseHuggingFace={(repository) =>
+          listHuggingFaceModelFiles(repository)
+        }
         onDtypeAtlasChange={(open) => {
           const pageUrl = new URL(window.location.href);
           if (open) pageUrl.searchParams.set("view", "dtypes");

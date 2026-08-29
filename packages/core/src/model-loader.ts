@@ -6,6 +6,10 @@ import {
 } from "./data-source";
 import { detectFormat } from "./detect";
 import { ParseError } from "./errors";
+import {
+  HuggingFaceHubSource,
+  parseHuggingFaceFileUrl
+} from "./hugging-face";
 import { materializeOnnxModel } from "./onnx-external";
 import { GgufParser } from "./parsers/gguf";
 import { OnnxParser } from "./parsers/onnx";
@@ -163,10 +167,7 @@ export async function loadModelUrl(
       await loadRemoteGgufShardFamily(url, ggufShard, signal, onSource, onProgress)
     ];
   }
-  const source = await HttpRangeSource.create(url, {
-    ...(signal ? { signal } : {}),
-    ...(onProgress ? { onProgress } : {})
-  });
+  const source = await createRemoteSource(url, signal, onProgress);
   onSource?.(source);
   return loadSources([source], signal);
 }
@@ -252,10 +253,11 @@ async function loadRemoteGgufShardFamily(
     const outcomes = await Promise.allSettled(
       indexes.map(async (index) => {
         const filename = `${shard.prefix}-${String(index).padStart(shard.width, "0")}-of-${String(shard.total).padStart(shard.width, "0")}.gguf`;
-        return HttpRangeSource.create(replaceUrlFilename(url, filename), {
-          ...(signal ? { signal } : {}),
-          ...(onProgress ? { onProgress } : {})
-        });
+        return createRemoteSource(
+          replaceUrlFilename(url, filename),
+          signal,
+          onProgress
+        );
       })
     );
     for (const outcome of outcomes) {
@@ -377,21 +379,15 @@ async function loadRemoteSafeTensorsIndex(
   onSource?: (source: RandomAccessSource) => void,
   onProgress?: RemoteLoadProgressCallback
 ): Promise<ParsedModel> {
-  const response = await fetch(url, {
-    mode: "cors",
-    credentials: "omit",
-    ...(signal ? { signal } : {})
-  });
-  if (!response.ok) {
-    throw new ParseError(`Unable to fetch SafeTensors index: HTTP ${response.status}`);
+  const indexSource = await createRemoteSource(url, signal, onProgress);
+  if (indexSource.size > BigInt(SAFETENSORS_INDEX_MAX_BYTES)) {
+    throw new ParseError("SafeTensors index exceeds the 64 MiB limit");
   }
-  const bytes = await readResponseCapped(
-    response,
-    SAFETENSORS_INDEX_MAX_BYTES,
-    "SafeTensors index",
-    signal,
-    onProgress,
-    decodeURIComponent(new URL(url).pathname.split("/").pop() || "model index")
+  onSource?.(indexSource);
+  const bytes = await indexSource.read(
+    0n,
+    bigintToSafeNumber(indexSource.size, "SafeTensors index size"),
+    signal
   );
   const index = parseSafeTensorsIndex(bytes);
   const shardNames = orderedShardNames(index.weight_map);
@@ -399,12 +395,10 @@ async function loadRemoteSafeTensorsIndex(
   for (let index = 0; index < shardNames.length; index += REMOTE_SHARD_CONCURRENCY) {
     const outcomes = await Promise.allSettled(
       shardNames.slice(index, index + REMOTE_SHARD_CONCURRENCY).map(async (shardName) => {
-        const source = await HttpRangeSource.create(
+        const source = await createRemoteSource(
           new URL(shardName, url).toString(),
-          {
-            ...(signal ? { signal } : {}),
-            ...(onProgress ? { onProgress } : {})
-          }
+          signal,
+          onProgress
         );
         onSource?.(source);
         return parsers.safetensors.parse(source, signal ? { signal } : {});
@@ -425,6 +419,20 @@ async function loadRemoteSafeTensorsIndex(
     files,
     diagnostics: []
   };
+}
+
+async function createRemoteSource(
+  url: string,
+  signal?: AbortSignal,
+  onProgress?: RemoteLoadProgressCallback
+): Promise<RandomAccessSource> {
+  if (parseHuggingFaceFileUrl(url)) {
+    return HuggingFaceHubSource.create(url, signal ? { signal } : {});
+  }
+  return HttpRangeSource.create(url, {
+    ...(signal ? { signal } : {}),
+    ...(onProgress ? { onProgress } : {})
+  });
 }
 
 function orderedShardNames(weightMap: Record<string, string>): string[] {

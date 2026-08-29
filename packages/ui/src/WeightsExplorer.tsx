@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import type {
   ModelComparison,
+  HuggingFaceModelFile,
   ParsedFile,
   ParsedModel,
   RemoteLoadProgress,
@@ -76,6 +77,7 @@ interface WeightsExplorerProps {
   onChooseFiles?: () => void;
   onFilesSelected?: (files: File[]) => void;
   onOpenUrl?: (url: string) => void;
+  onBrowseHuggingFace?: (repository: string) => Promise<HuggingFaceModelFile[]>;
   onSample?: (tensor: TensorRecord) => Promise<TensorSample>;
   defaultUrl?: string;
   intro?: string;
@@ -119,6 +121,7 @@ export function WeightsExplorer({
   onChooseFiles,
   onFilesSelected,
   onOpenUrl,
+  onBrowseHuggingFace,
   onSample,
   defaultUrl = "",
   intro,
@@ -135,6 +138,10 @@ export function WeightsExplorer({
   const [sampleError, setSampleError] = useState<string>();
   const [url, setUrl] = useState(defaultUrl);
   const [urlOpen, setUrlOpen] = useState(false);
+  const [huggingFaceRepo, setHuggingFaceRepo] = useState("");
+  const [huggingFaceFiles, setHuggingFaceFiles] = useState<HuggingFaceModelFile[]>([]);
+  const [huggingFaceBusy, setHuggingFaceBusy] = useState(false);
+  const [huggingFaceError, setHuggingFaceError] = useState<string>();
   const [query, setQuery] = useState("");
   const [inspectorMode, setInspectorMode] = useState<"metadata" | "tensor">("metadata");
   const [metadataFileId, setMetadataFileId] = useState<string>();
@@ -330,28 +337,88 @@ export function WeightsExplorer({
             </button>
           )}
           {onOpenUrl && urlOpen && (
-            <form
-              className="wv-url-popover"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!url.trim()) return;
-                onOpenUrl(url.trim());
-                setUrlOpen(false);
-              }}
-            >
-              <label htmlFor="wv-model-urls">Model URLs</label>
-              <textarea
-                id="wv-model-urls"
-                rows={3}
-                placeholder="Paste one or more model URLs"
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-              />
-              <div>
-                <small>Separate multiple URLs with spaces or new lines.</small>
-                <button className="wv-button primary" type="submit">Load</button>
-              </div>
-            </form>
+            <div className="wv-url-popover">
+              {onBrowseHuggingFace && (
+                <form
+                  className="wv-hf-repo-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!huggingFaceRepo.trim() || huggingFaceBusy) return;
+                    setHuggingFaceBusy(true);
+                    setHuggingFaceError(undefined);
+                    setHuggingFaceFiles([]);
+                    void onBrowseHuggingFace(huggingFaceRepo.trim())
+                      .then((files) => {
+                        setHuggingFaceFiles(files);
+                        if (!files.length) {
+                          setHuggingFaceError("No supported model files were found.");
+                        }
+                      })
+                      .catch((reason) =>
+                        setHuggingFaceError(
+                          reason instanceof Error ? reason.message : String(reason)
+                        )
+                      )
+                      .finally(() => setHuggingFaceBusy(false));
+                  }}
+                >
+                  <label htmlFor="wv-hf-repository">Hugging Face repository</label>
+                  <div className="wv-hf-repo-row">
+                    <input
+                      id="wv-hf-repository"
+                      value={huggingFaceRepo}
+                      placeholder="owner/repository"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      onChange={(event) => setHuggingFaceRepo(event.target.value)}
+                    />
+                    <button className="wv-button" type="submit" disabled={huggingFaceBusy}>
+                      {huggingFaceBusy ? "Finding…" : "Find files"}
+                    </button>
+                  </div>
+                  {huggingFaceError && <small className="wv-hf-error">{huggingFaceError}</small>}
+                  {huggingFaceFiles.length > 0 && (
+                    <div className="wv-hf-files" aria-label="Model files">
+                      {huggingFaceFiles.map((file) => (
+                        <button
+                          type="button"
+                          key={file.path}
+                          onClick={() => {
+                            onOpenUrl(file.url);
+                            setUrlOpen(false);
+                          }}
+                        >
+                          <span title={file.path}>{file.path}</span>
+                          <small>{file.format.toUpperCase()} · {formatBytes(BigInt(file.size))}</small>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </form>
+              )}
+              <form
+                className="wv-direct-url-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!url.trim()) return;
+                  onOpenUrl(url.trim());
+                  setUrlOpen(false);
+                }}
+              >
+                <label htmlFor="wv-model-urls">Model URLs</label>
+                <textarea
+                  id="wv-model-urls"
+                  rows={3}
+                  placeholder="Paste one or more model URLs"
+                  value={url}
+                  onChange={(event) => setUrl(event.target.value)}
+                />
+                <div>
+                  <small>Separate multiple URLs with spaces or new lines.</small>
+                  <button className="wv-button primary" type="submit">Load</button>
+                </div>
+              </form>
+            </div>
           )}
         </div>
       </header>}
@@ -425,7 +492,7 @@ export function WeightsExplorer({
                   ? downloadProgressText(progress)
                   : "Reading file headers and tensor indexes. Large sharded models may take a moment."
                 : intro ??
-                  "Drop GGUF, SafeTensors, or ONNX files here. Files stay on this device; remote models use byte-range requests."}
+                  "Drop GGUF, SafeTensors, or ONNX files here. Files stay on this device; remote models stream only the metadata you inspect."}
             </p>
             {!busy && (
               <div className="wv-empty-actions">
