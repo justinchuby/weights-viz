@@ -1,6 +1,6 @@
 # Change Log
 
-## Unreleased
+## 0.5.0
 
 - Use Hugging Face's Xet reconstruction protocol for public Hub files so large
   models remain readable when iPhone Safari receives HTTP 200 from the Xet
@@ -8,12 +8,11 @@
 - Let web users enter a Hugging Face repository name, browse supported model
   files, and open one without copying a file URL.
 - Add automatic static deployment to Hugging Face Spaces.
-
-## Unreleased
-
 - Standardize every complex GGUF lesson on `group`, group-local `position`, and
   record-local `i`; reserve `lane` for multi-value grids and derive it explicitly
   as `position mod 4/8`, including exact scalar nibble mappings.
+- Promote the Link action to a labeled primary button so remote model loading is
+  discoverable alongside opening local files.
 
 ## 0.4.0
 

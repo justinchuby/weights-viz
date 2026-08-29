@@ -2,7 +2,7 @@
   "name": "weights-viz",
   "displayName": "Weights Viz",
   "description": "Inspect GGUF, SafeTensors, and ONNX model weight layouts.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "publisher": "justinchuby",
