@@ -82,6 +82,9 @@ function App() {
       {...(error ? { error } : {})}
       intro="Open a GGUF, SafeTensors, or ONNX file with the Weights Visualization editor, or choose files below. VS Code webviews cannot show the browser file dialog, so this button asks VS Code for its native picker."
       onChooseFiles={chooseFiles}
+      onCloseModel={(modelId) =>
+        setModels((current) => current.filter((model) => model.id !== modelId))
+      }
       onSample={sample}
     />
   );

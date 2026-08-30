@@ -151,25 +151,28 @@ export async function loadModelUrl(
 ): Promise<ParsedModel[]> {
   const url = normalizeModelUrl(rawUrl);
   const lowerPath = new URL(url).pathname.toLowerCase();
+  let models: ParsedModel[];
   if (lowerPath.endsWith(".safetensors.index.json")) {
-    return [await loadRemoteSafeTensorsIndex(url, signal, onSource, onProgress)];
-  }
-  if (lowerPath.endsWith(".onnx")) {
-    return [
+    models = [await loadRemoteSafeTensorsIndex(url, signal, onSource, onProgress)];
+  } else if (lowerPath.endsWith(".onnx")) {
+    models = [
       await loadRemoteOnnx(url, signal, onSource, onProgress)
     ];
+  } else {
+    const ggufShard = parseGgufShardName(
+      decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "")
+    );
+    if (ggufShard) {
+      models = [
+        await loadRemoteGgufShardFamily(url, ggufShard, signal, onSource, onProgress)
+      ];
+    } else {
+      const source = await createRemoteSource(url, signal, onProgress);
+      onSource?.(source);
+      models = await loadSources([source], signal);
+    }
   }
-  const ggufShard = parseGgufShardName(
-    decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "")
-  );
-  if (ggufShard) {
-    return [
-      await loadRemoteGgufShardFamily(url, ggufShard, signal, onSource, onProgress)
-    ];
-  }
-  const source = await createRemoteSource(url, signal, onProgress);
-  onSource?.(source);
-  return loadSources([source], signal);
+  return labelHuggingFaceModels(models, url);
 }
 
 async function loadGgufShardFamily(
@@ -379,15 +382,22 @@ async function loadRemoteSafeTensorsIndex(
   onSource?: (source: RandomAccessSource) => void,
   onProgress?: RemoteLoadProgressCallback
 ): Promise<ParsedModel> {
-  const indexSource = await createRemoteSource(url, signal, onProgress);
-  if (indexSource.size > BigInt(SAFETENSORS_INDEX_MAX_BYTES)) {
-    throw new ParseError("SafeTensors index exceeds the 64 MiB limit");
+  const response = await fetch(url, {
+    mode: "cors",
+    credentials: "omit",
+    cache: "no-store",
+    ...(signal ? { signal } : {})
+  });
+  if (!response.ok) {
+    throw new ParseError(`Unable to fetch SafeTensors index: HTTP ${response.status}`);
   }
-  onSource?.(indexSource);
-  const bytes = await indexSource.read(
-    0n,
-    bigintToSafeNumber(indexSource.size, "SafeTensors index size"),
-    signal
+  const bytes = await readResponseCapped(
+    response,
+    SAFETENSORS_INDEX_MAX_BYTES,
+    "SafeTensors index",
+    signal,
+    onProgress,
+    decodeURIComponent(new URL(url).pathname.split("/").pop() || "model index")
   );
   const index = parseSafeTensorsIndex(bytes);
   const shardNames = orderedShardNames(index.weight_map);
@@ -419,6 +429,21 @@ async function loadRemoteSafeTensorsIndex(
     files,
     diagnostics: []
   };
+}
+
+function labelHuggingFaceModels(
+  models: ParsedModel[],
+  url: string
+): ParsedModel[] {
+  const location = parseHuggingFaceFileUrl(url);
+  if (!location) return models;
+  return models.map((model) => ({
+    ...model,
+    name:
+      model.name.toLowerCase() === "model"
+        ? location.repo
+        : `${location.repo} / ${model.name}`
+  }));
 }
 
 async function createRemoteSource(

@@ -78,6 +78,7 @@ interface WeightsExplorerProps {
   onFilesSelected?: (files: File[]) => void;
   onOpenUrl?: (url: string) => void;
   onBrowseHuggingFace?: (repository: string) => Promise<HuggingFaceModelFile[]>;
+  onCloseModel?: (modelId: string) => void;
   onSample?: (tensor: TensorRecord) => Promise<TensorSample>;
   defaultUrl?: string;
   intro?: string;
@@ -101,6 +102,7 @@ interface TensorNavigationTarget {
 }
 
 const CHOOSER_GRACE_MS = 1200;
+const CLOSE_MODEL_VALUE = "__weights-viz-close-model__";
 
 function embeddedHostLabel(): string | undefined {
   if (typeof navigator === "undefined") return undefined;
@@ -122,6 +124,7 @@ export function WeightsExplorer({
   onFilesSelected,
   onOpenUrl,
   onBrowseHuggingFace,
+  onCloseModel,
   onSample,
   defaultUrl = "",
   intro,
@@ -541,13 +544,16 @@ export function WeightsExplorer({
             <div className="wv-panel-title">
               <div>
                 <span>BYTE MAP</span>
-                {models.length > 1 ? (
+                {models.length > 1 || onCloseModel ? (
                   <ModelSelectControl
                     className="wv-model-select"
                     aria-label="Active model"
                     value={activeModel.id}
                     models={models}
                     onChange={setActiveModelId}
+                    {...(onCloseModel
+                      ? { onClose: () => onCloseModel(activeModel.id) }
+                      : {})}
                   />
                 ) : (
                   <h2>{activeModel.name}</h2>
@@ -1133,12 +1139,14 @@ function ModelSelectControl({
   value,
   models,
   onChange,
+  onClose,
   className,
   "aria-label": ariaLabel
 }: {
   value: string;
   models: ParsedModel[];
   onChange: (value: string) => void;
+  onClose?: () => void;
   className?: string;
   "aria-label"?: string;
 }) {
@@ -1146,7 +1154,17 @@ function ModelSelectControl({
     <SelectControl
       value={value}
       options={models.map((model) => ({ value: model.id, label: model.name }))}
-      onChange={onChange}
+      onChange={(value) => {
+        if (value === CLOSE_MODEL_VALUE) onClose?.();
+        else onChange(value);
+      }}
+      {...(onClose
+        ? {
+            extraOptions: [
+              { value: CLOSE_MODEL_VALUE, label: "Close this model" }
+            ]
+          }
+        : {})}
       {...(className ? { className } : {})}
       {...(ariaLabel ? { "aria-label": ariaLabel } : {})}
     />
@@ -1156,12 +1174,14 @@ function ModelSelectControl({
 function SelectControl({
   value,
   options,
+  extraOptions = [],
   onChange,
   className,
   "aria-label": ariaLabel
 }: {
   value: string;
   options: { value: string; label: string }[];
+  extraOptions?: { value: string; label: string }[];
   onChange: (value: string) => void;
   className?: string;
   "aria-label"?: string;
@@ -1174,6 +1194,9 @@ function SelectControl({
         onChange={(event) => onChange(event.target.value)}
       >
         {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+        {extraOptions.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>

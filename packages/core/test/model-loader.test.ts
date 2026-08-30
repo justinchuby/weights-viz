@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  loadModelUrl,
   loadSources,
   MemorySource,
   normalizeModelUrl,
   parseGgufShardName,
   validateOnnxExternalLocation
 } from "../src";
+
+afterEach(() => vi.unstubAllGlobals());
 
 function safeTensor(name: string): MemorySource {
   const header = new TextEncoder().encode(
@@ -127,6 +130,28 @@ describe("loadSources", () => {
         )
       ).toBe(
         "https://huggingface.co/org/model/resolve/main/weights/model.Q4_K_M.gguf"
+      );
+    });
+
+    it("streams Hugging Face SafeTensors indexes without requiring size headers", async () => {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(JSON.stringify({ weight_map: {} }))
+      );
+      vi.stubGlobal("fetch", fetcher);
+
+      const models = await loadModelUrl(
+        "https://huggingface.co/zai-org/GLM-5.3-Flash/blob/main/model.safetensors.index.json"
+      );
+
+      expect(models).toHaveLength(1);
+      expect(models[0]?.name).toBe("zai-org/GLM-5.3-Flash");
+      expect(fetcher).toHaveBeenCalledWith(
+        "https://huggingface.co/zai-org/GLM-5.3-Flash/resolve/main/model.safetensors.index.json",
+        expect.objectContaining({
+          cache: "no-store",
+          credentials: "omit",
+          mode: "cors"
+        })
       );
     });
 

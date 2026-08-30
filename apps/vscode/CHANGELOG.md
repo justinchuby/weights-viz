@@ -1,5 +1,15 @@
 # Change Log
 
+## Unreleased
+
+- Load SafeTensors index JSON directly with a bounded stream so mobile WebKit
+  does not depend on a visible response-size header before opening Hugging Face
+  shard manifests.
+- Add a **Close this model** action to the model selector, including the final
+  open model.
+- Prefix Hugging Face model labels with their `owner/repo` identity so several
+  generic `model.safetensors.index.json` models remain distinguishable.
+
 ## 0.5.0
 
 - Use Hugging Face's Xet reconstruction protocol for public Hub files so large

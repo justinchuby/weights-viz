@@ -205,6 +205,9 @@ function App() {
           });
         }}
         onFilesSelected={(files) => void loadFiles(files)}
+        onCloseModel={(modelId) =>
+          setModels((current) => current.filter((model) => model.id !== modelId))
+        }
         onBrowseHuggingFace={(repository) =>
           listHuggingFaceModelFiles(repository)
         }
