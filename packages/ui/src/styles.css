@@ -800,7 +800,7 @@ button, a, select, .wv-file-picker { touch-action: manipulation; -webkit-tap-hig
   .wv-dtypes-button { width: 34px; height: 34px; padding: 0; }
   .wv-dtypes-button > span { display: none; }
   .wv-panel-title { align-items: stretch; flex-direction: column; gap: 0; padding: 6px 10px; }
-  .wv-panel-title > div:first-child > span { display: none; }
+  .wv-panel-kicker { display: none; }
   .wv-panel-actions { justify-content: space-between; }
   .wv-panel-actions p { display: none; }
   .wv-model-select { width: 100%; margin-top: 0; }

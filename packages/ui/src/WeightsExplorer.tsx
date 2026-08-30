@@ -554,7 +554,7 @@ export function WeightsExplorer({
           <div className="wv-map-panel">
             <div className="wv-panel-title">
               <div>
-                <span>BYTE MAP</span>
+                <span className="wv-panel-kicker">BYTE MAP</span>
                 {models.length > 1 || onCloseModel ? (
                   <ModelSelectControl
                     className="wv-model-select"
