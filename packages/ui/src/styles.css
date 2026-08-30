@@ -246,7 +246,7 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 .wv-tooltip b, .wv-tooltip span, .wv-tooltip code { display: block; margin: 2px 0; overflow: hidden; text-overflow: ellipsis; }
 .wv-tooltip span { color: var(--wv-muted); }
 .wv-tooltip code { color: var(--wv-accent); margin-top: 7px; }
-.wv-view-controls { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: stretch; overflow: hidden; color: var(--wv-text); background: var(--wv-surface); border: 1px solid var(--wv-border); border-radius: var(--wv-control-radius); }
+.wv-view-controls { position: absolute; z-index: 5; right: 12px; bottom: 12px; display: flex; align-items: stretch; overflow: hidden; color: var(--wv-text); background: var(--wv-surface); border: 1px solid var(--wv-border); border-radius: var(--wv-control-radius); }
 .wv-resolution, .wv-zoom { display: flex; align-items: stretch; }
 .wv-zoom { border-left: 1px solid var(--wv-border); }
 .wv-view-controls button { border: 0; border-right: 1px solid var(--wv-border); color: inherit; background: transparent; padding: 7px 10px; cursor: pointer; }
@@ -787,6 +787,15 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
   .wv-source-button { display: none; }
   .wv-dtypes-button { width: 34px; height: 34px; padding: 0; }
   .wv-dtypes-button > span { display: none; }
+  .wv-panel-title { align-items: stretch; flex-direction: column; gap: 7px; }
+  .wv-panel-actions { justify-content: space-between; }
+  .wv-model-select { width: 100%; }
+  .wv-view-controls { right: 8px; bottom: 8px; left: 8px; flex-direction: column; }
+  .wv-resolution, .wv-zoom { width: 100%; min-width: 0; min-height: 44px; }
+  .wv-zoom { border-top: 1px solid var(--wv-border); border-left: 0; }
+  .wv-view-controls button { width: 44px; min-width: 44px; padding: 0; display: grid; place-items: center; }
+  .wv-view-controls span, .wv-resolution span { min-width: 0; flex: 1; }
+  .wv-map-scrollbar { bottom: 112px; }
   .wv-dtype-backdrop { padding: 10px; }
   .wv-dtype-dialog { max-height: 94vh; }
   .wv-dtype-head, .wv-dtype-body { padding: 14px; }
