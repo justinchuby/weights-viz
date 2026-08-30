@@ -9,8 +9,10 @@
   open model.
 - Prefix Hugging Face model labels with their `owner/repo` identity so several
   generic `model.safetensors.index.json` models remain distinguishable.
-- Keep mobile map controls entirely inside the viewport as two 44 px touch-target
-  rows, and give long model repository names the full panel width.
+- Compact the mobile header and keep map controls inside the viewport as one
+  40 px row, giving more height to the model map and full width to long repository names.
+- Improve keyboard navigation, form semantics, focus treatment, reduced-motion
+  behavior, safe-area layout, model-close confirmation, and large-list rendering.
 
 ## 0.5.0
 

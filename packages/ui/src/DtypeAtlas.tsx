@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   BookOpen,
@@ -20,6 +20,7 @@ import { createDtypeEducation, formatDecimal } from "./dtype-education";
 
 interface DtypeAtlasProps {
   onBack: () => void;
+  syncUrlState?: boolean;
   onExplain: (
     format: WeightFormat,
     tensor: TensorRecord,
@@ -60,9 +61,21 @@ const FORMAT_DETAILS: Array<{
   }
 ];
 
-export function DtypeAtlas({ onBack, onExplain }: DtypeAtlasProps) {
-  const [query, setQuery] = useState("");
-  const [format, setFormat] = useState<FormatFilter>("all");
+export function DtypeAtlas({
+  onBack,
+  onExplain,
+  syncUrlState = false
+}: DtypeAtlasProps) {
+  const [query, setQuery] = useState(() =>
+    syncUrlState ? new URLSearchParams(window.location.search).get("dtypeQuery") ?? "" : ""
+  );
+  const [format, setFormat] = useState<FormatFilter>(() => {
+    if (!syncUrlState) return "all";
+    const value = new URLSearchParams(window.location.search).get("dtypeFormat");
+    return value === "safetensors" || value === "gguf" || value === "onnx"
+      ? value
+      : "all";
+  });
   const entries = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return CATALOG.filter((entry) => {
@@ -75,6 +88,16 @@ export function DtypeAtlas({ onBack, onExplain }: DtypeAtlasProps) {
         .includes(normalized);
     });
   }, [format, query]);
+
+  useEffect(() => {
+    if (!syncUrlState) return;
+    const pageUrl = new URL(window.location.href);
+    if (query) pageUrl.searchParams.set("dtypeQuery", query);
+    else pageUrl.searchParams.delete("dtypeQuery");
+    if (format !== "all") pageUrl.searchParams.set("dtypeFormat", format);
+    else pageUrl.searchParams.delete("dtypeFormat");
+    window.history.replaceState(window.history.state, "", pageUrl);
+  }, [format, query, syncUrlState]);
 
   return (
     <section className="wv-atlas">
@@ -130,8 +153,10 @@ export function DtypeAtlas({ onBack, onExplain }: DtypeAtlasProps) {
             <Search aria-hidden="true" />
             <input
               type="search"
+              name="dtype-query"
+              autoComplete="off"
               value={query}
-              placeholder="Search dtype, family, or concept"
+              placeholder="Search dtype, family, or concept…"
               aria-label="Search dtype atlas"
               onChange={(event) => setQuery(event.target.value)}
             />

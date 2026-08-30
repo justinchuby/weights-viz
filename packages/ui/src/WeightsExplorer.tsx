@@ -275,7 +275,9 @@ export function WeightsExplorer({
   };
 
   return (
-    <main className={`wv-shell${compact ? " compact" : ""}`}>
+    <>
+      <a className="wv-skip-link" href="#weights-viz-main">Skip to main content</a>
+      <main id="weights-viz-main" className={`wv-shell${compact ? " compact" : ""}`}>
       {!compact && <header className="wv-header">
         <div className="wv-brand">
           <h1>Weights <span>Viz</span></h1>
@@ -370,8 +372,11 @@ export function WeightsExplorer({
                   <div className="wv-hf-repo-row">
                     <input
                       id="wv-hf-repository"
+                      name="hugging-face-repository"
+                      autoComplete="off"
+                      spellCheck={false}
                       value={huggingFaceRepo}
-                      placeholder="owner/repository"
+                      placeholder="owner/repository…"
                       autoCapitalize="none"
                       autoCorrect="off"
                       onChange={(event) => setHuggingFaceRepo(event.target.value)}
@@ -380,7 +385,9 @@ export function WeightsExplorer({
                       {huggingFaceBusy ? "Finding…" : "Find files"}
                     </button>
                   </div>
-                  {huggingFaceError && <small className="wv-hf-error">{huggingFaceError}</small>}
+                  {huggingFaceError && (
+                    <small className="wv-hf-error" role="alert">{huggingFaceError}</small>
+                  )}
                   {huggingFaceFiles.length > 0 && (
                     <div className="wv-hf-files" aria-label="Model files">
                       {huggingFaceFiles.map((file) => (
@@ -412,8 +419,11 @@ export function WeightsExplorer({
                 <label htmlFor="wv-model-urls">Model URLs</label>
                 <textarea
                   id="wv-model-urls"
+                  name="model-urls"
+                  autoComplete="off"
+                  spellCheck={false}
                   rows={3}
-                  placeholder="Paste one or more model URLs"
+                  placeholder="Paste one or more model URLs…"
                   value={url}
                   onChange={(event) => setUrl(event.target.value)}
                 />
@@ -427,7 +437,7 @@ export function WeightsExplorer({
         </div>
       </header>}
 
-      {error && <div className="wv-alert error">{error}</div>}
+      {error && <div className="wv-alert error" role="alert">{error}</div>}
       {pickerBlocked && (
         <div className="wv-alert warning" role="status">
           <div>
@@ -473,6 +483,7 @@ export function WeightsExplorer({
 
       {dtypeAtlasOpen ? (
         <DtypeAtlas
+          syncUrlState={Boolean(onDtypeAtlasChange)}
           onBack={() => setDtypeAtlas(false)}
           onExplain={(format, tensor, catalogMode) =>
             setDtypeLesson({ format, tensor, catalogMode })
@@ -571,16 +582,19 @@ export function WeightsExplorer({
                     <span>Compare</span>
                   </button>
                 )}
-                <p>Wheel to scroll · pinch or Ctrl/⌘ + wheel to zoom · drag to pan</p>
+                <p>Wheel or arrow keys to scroll · pinch, Ctrl/⌘ + wheel, or +/− to zoom · drag to pan</p>
               </div>
             </div>
             <div className="wv-map-toolbar">
               <div className="wv-tensor-search">
                 <input
                   id="tensor-filter"
+                  name="tensor-filter"
+                  autoComplete="off"
+                  spellCheck={false}
                   className="wv-filter"
                   aria-label="Filter tensors"
-                  placeholder="Filter tensors by name or dtype"
+                  placeholder="Filter tensors by name or dtype…"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   onKeyDown={(event) => {
@@ -801,7 +815,8 @@ export function WeightsExplorer({
           showTensorMetrics={!dtypeLesson.catalogMode}
         />
       )}
-    </main>
+      </main>
+    </>
   );
 }
 
@@ -960,9 +975,12 @@ function ComparisonWorkspace({
         </label>
         <div className="wv-tensor-search">
           <input
+            name="comparison-tensor-query"
+            autoComplete="off"
+            spellCheck={false}
             className="wv-filter"
             aria-label="Search compared tensors"
-            placeholder="Search exact tensor names or dtype"
+            placeholder="Search exact tensor names or dtype…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -1155,8 +1173,13 @@ function ModelSelectControl({
       value={value}
       options={models.map((model) => ({ value: model.id, label: model.name }))}
       onChange={(value) => {
-        if (value === CLOSE_MODEL_VALUE) onClose?.();
-        else onChange(value);
+        if (value === CLOSE_MODEL_VALUE) {
+          if (window.confirm("Close this model? You can reopen the file or repository later.")) {
+            onClose?.();
+          }
+          return;
+        }
+        onChange(value);
       }}
       {...(onClose
         ? {
@@ -1521,6 +1544,41 @@ function WeightMap({
     >
       <canvas
         ref={canvasRef}
+        role="region"
+        aria-label="Interactive model byte map. Use arrow keys to pan, plus or minus to zoom, and Home to reset the view."
+        tabIndex={0}
+        onKeyDown={(event) => {
+          const panStep = Math.max(40, Math.min(size.width, size.height) * 0.1);
+          if (event.key === "ArrowUp") {
+            setOffset((current) =>
+              clampOffset({ ...current, y: current.y + panStep }, layout, size, zoom)
+            );
+          } else if (event.key === "ArrowDown") {
+            setOffset((current) =>
+              clampOffset({ ...current, y: current.y - panStep }, layout, size, zoom)
+            );
+          } else if (event.key === "ArrowLeft") {
+            setOffset((current) =>
+              clampOffset({ ...current, x: current.x + panStep }, layout, size, zoom)
+            );
+          } else if (event.key === "ArrowRight") {
+            setOffset((current) =>
+              clampOffset({ ...current, x: current.x - panStep }, layout, size, zoom)
+            );
+          } else if (event.key === "+" || event.key === "=") {
+            setZoomAt(zoom * 1.4, size.width / 2, size.height / 2);
+          } else if (event.key === "-") {
+            setZoomAt(zoom / 1.4, size.width / 2, size.height / 2);
+          } else if (event.key === "Home" || event.key === "0") {
+            setZoom(1);
+            setResolutionStep(0);
+            setOffset({ x: 0, y: 0 });
+          } else {
+            return;
+          }
+          event.preventDefault();
+          setHover(undefined);
+        }}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -2392,9 +2450,12 @@ function MetadataInspector({
         <span>{formatBytes(file.size)}</span>
       </div>
       <input
+        name="metadata-query"
+        autoComplete="off"
+        spellCheck={false}
         className="wv-filter"
         aria-label="Filter metadata"
-        placeholder="Filter metadata keys or values"
+        placeholder="Filter metadata keys or values…"
         value={query}
         onChange={(event) => onQueryChange(event.target.value)}
       />
