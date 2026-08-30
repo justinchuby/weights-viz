@@ -71,6 +71,7 @@ import {
 
 interface WeightsExplorerProps {
   models: ParsedModel[];
+  version?: string;
   busy?: boolean;
   progress?: RemoteLoadProgress;
   error?: string;
@@ -117,6 +118,7 @@ function embeddedHostLabel(): string | undefined {
 
 export function WeightsExplorer({
   models,
+  version,
   busy = false,
   progress,
   error,
@@ -281,6 +283,7 @@ export function WeightsExplorer({
       {!compact && <header className="wv-header">
         <div className="wv-brand">
           <h1>Weights <span>Viz</span></h1>
+          {version && <span className="wv-brand-version">v{version}</span>}
           <span className="wv-brand-tag">local-first model inspector</span>
         </div>
         <div className="wv-actions">
@@ -494,6 +497,7 @@ export function WeightsExplorer({
           <div className="wv-empty-grid" />
           <div className="wv-empty-content">
             <div className="wv-file-mark">01</div>
+            {version && <div className="wv-empty-version">Weights Viz · v{version}</div>}
             <h2>
               {busy
                 ? progress

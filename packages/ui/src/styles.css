@@ -100,6 +100,7 @@ button, a, select, .wv-file-picker { touch-action: manipulation; -webkit-tap-hig
 .wv-brand { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
 .wv-header h1 { margin: 0; font-size: 23px; letter-spacing: -1.2px; white-space: nowrap; }
 .wv-header h1 span { color: var(--wv-accent); font-weight: 400; }
+.wv-brand-version { flex: none; color: var(--wv-accent); font: 700 9px/1 ui-monospace, SFMono-Regular, monospace; letter-spacing: .04em; }
 .wv-brand-tag { overflow: hidden; color: var(--wv-faint); font: 600 8px/1 ui-monospace, SFMono-Regular, monospace; letter-spacing: .12em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .wv-repo-link { color: var(--wv-muted); font: 10px/1.2 ui-monospace, SFMono-Regular, monospace; text-decoration: none; }
 .wv-repo-link:hover { color: var(--wv-accent); text-decoration: underline; }
@@ -153,6 +154,7 @@ button, a, select, .wv-file-picker { touch-action: manipulation; -webkit-tap-hig
 .wv-empty-content { position: relative; max-width: 620px; text-align: center; padding: 40px; }
 .wv-empty-content h2 { margin: 18px 0 12px; font-size: clamp(34px, 5vw, 64px); line-height: .98; letter-spacing: -3px; }
 .wv-empty-content p { color: var(--wv-muted); line-height: 1.6; margin: 0 auto 26px; max-width: 540px; }
+.wv-empty-version { margin-top: 18px; color: var(--wv-faint); font: 700 10px/1 ui-monospace, SFMono-Regular, monospace; letter-spacing: .12em; text-transform: uppercase; }
 .wv-empty-actions { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .wv-file-mark { width: 74px; height: 88px; border: 1px solid var(--wv-accent); border-radius: var(--wv-surface-radius); color: var(--wv-accent); display: grid; place-items: center; margin: auto; font: 600 16px ui-monospace, monospace; box-shadow: 10px 10px 0 color-mix(in srgb, var(--wv-accent) 8%, transparent); }
 

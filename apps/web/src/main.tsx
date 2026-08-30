@@ -8,6 +8,7 @@ import {
   type TensorSample
 } from "@weights-viz/core";
 import { WeightsExplorer } from "@weights-viz/ui";
+import { version } from "../../vscode/package.json";
 
 type WorkerRequest =
   | { type: "files"; files: File[] }
@@ -191,6 +192,7 @@ function App() {
     <>
       <WeightsExplorer
         models={models}
+        version={version}
         busy={busy}
         {...(remoteProgress ? { progress: remoteProgress } : {})}
         {...(error ? { error } : {})}
