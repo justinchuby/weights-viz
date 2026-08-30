@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1
+
 - Load SafeTensors index JSON directly with a bounded stream so mobile WebKit
   does not depend on a visible response-size header before opening Hugging Face
   shard manifests.
