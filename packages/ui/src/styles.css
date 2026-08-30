@@ -784,18 +784,29 @@ input::placeholder, textarea::placeholder { color: var(--wv-faint); opacity: 1; 
 }
 
 @media (max-width: 700px) {
+  .wv-header { height: 46px; }
+  .wv-header h1 { font-size: 20px; letter-spacing: -1px; }
+  .wv-actions { gap: 5px; }
+  .wv-actions .wv-button { padding: 7px 10px; }
   .wv-source-button { display: none; }
   .wv-dtypes-button { width: 34px; height: 34px; padding: 0; }
   .wv-dtypes-button > span { display: none; }
-  .wv-panel-title { align-items: stretch; flex-direction: column; gap: 7px; }
+  .wv-panel-title { align-items: stretch; flex-direction: column; gap: 0; padding: 6px 10px; }
+  .wv-panel-title > div:first-child > span { display: none; }
   .wv-panel-actions { justify-content: space-between; }
-  .wv-model-select { width: 100%; }
-  .wv-view-controls { right: 8px; bottom: 8px; left: 8px; flex-direction: column; }
-  .wv-resolution, .wv-zoom { width: 100%; min-width: 0; min-height: 44px; }
-  .wv-zoom { border-top: 1px solid var(--wv-border); border-left: 0; }
-  .wv-view-controls button { width: 44px; min-width: 44px; padding: 0; display: grid; place-items: center; }
+  .wv-panel-actions p { display: none; }
+  .wv-model-select { width: 100%; margin-top: 0; }
+  .wv-map-toolbar { gap: 5px; padding: 6px 10px; }
+  .wv-tensor-search { min-height: 36px; }
+  .wv-legend { width: 100%; flex-wrap: nowrap; overflow-x: auto; }
+  .wv-legend > small { display: none; }
+  .wv-view-controls { right: 8px; bottom: 8px; left: 8px; flex-direction: row; }
+  .wv-resolution, .wv-zoom { min-width: 0; min-height: 40px; }
+  .wv-resolution { flex: 1.05; }
+  .wv-zoom { flex: 1; border-top: 0; border-left: 1px solid var(--wv-border); }
+  .wv-view-controls button { width: 40px; min-width: 40px; padding: 0; display: grid; place-items: center; }
   .wv-view-controls span, .wv-resolution span { min-width: 0; flex: 1; }
-  .wv-map-scrollbar { bottom: 112px; }
+  .wv-map-scrollbar { bottom: 58px; }
   .wv-dtype-backdrop { padding: 10px; }
   .wv-dtype-dialog { max-height: 94vh; }
   .wv-dtype-head, .wv-dtype-body { padding: 14px; }
