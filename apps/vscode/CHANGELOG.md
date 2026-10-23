@@ -2,11 +2,16 @@
 
 ## Unreleased
 
+## 0.5.2
+
 - Recognize ONNX IR 14 `FLOAT6E2M3` and `FLOAT6E3M2`, including packed external
   byte ranges and canonical inline encodings. Add FP6 bit layouts and worked
   animations that distinguish packed `raw_data` from `int32_data` varints.
 - Update Hugging Face Hub to 2.17.9 for Xet token-refresh recovery and encoded
   revision/file-path fixes.
+- Preserve Hugging Face filenames containing literal percent signs without
+  decoding them a second time.
+- Show the current application version on the web homepage and beside its title.
 
 ## 0.5.1
 
