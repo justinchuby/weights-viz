@@ -457,6 +457,36 @@ export function createDtypeAnimationStory(
     };
   }
   if (kind === "floating") {
+    if (format === "onnx" && (lesson.dtype === "FLOAT6E2M3" || lesson.dtype === "FLOAT6E3M2")) {
+      const typed = lesson.onnxDataField === "int32_data";
+      return {
+        kind,
+        title: `Watch ${lesson.dtype} ${typed ? "use one varint per value" : "cross byte boundaries"}`,
+        intro: typed
+          ? "Each int32_data entry stores one six-bit code in bits 0–5. Valid codes fit in one protobuf varint byte, with the upper two bits zero."
+          : "raw_data and external data pack four six-bit codes into a three-byte LSB-first stream. int32_data uses a different, one-code-per-varint representation.",
+        stages: [
+          commonStages[0]!,
+          commonStages[1]!,
+          {
+            label: typed ? "Write int32_data entries" : "Pack the raw byte stream",
+            detail: typed
+              ? "Codes 1, 2, 3, 4 serialize as 01 02 03 04. Protobuf field tags and length prefixes surround these payload bytes."
+              : "Codes 1, 2, 3, 4 pack as 81 30 10 (hex). A partial final group uses ceil(6 × count / 8) bytes; unused high bits must be zero."
+          },
+          {
+            label: "Recover each six-bit code",
+            detail: typed
+              ? "Read one unsigned varint per value, check code ≤ 63, then decode its sign, exponent, and fraction."
+              : "Shift and mask the LSB-first stream to recover codes 1, 2, 3, 4, then decode each code's sign, exponent, and fraction."
+          }
+        ],
+        source: ["four FP6 values"],
+        encoded: lesson.segments.map(({ label, bits: width }) => `${label} ${width}b`),
+        storage: typed ? ["01", "02", "03", "04"] : ["81", "30", "10"],
+        decoded: ["codes: 1, 2, 3, 4", "sign + exponent + fraction"]
+      };
+    }
     const complex = ["C64", "COMPLEX64", "COMPLEX128"].includes(lesson.dtype);
     const exponentOnly = ["F8_E8M0", "FLOAT8E8M0"].includes(lesson.dtype);
     if (complex) {

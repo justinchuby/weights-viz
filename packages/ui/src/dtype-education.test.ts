@@ -157,6 +157,31 @@ describe("dtype education", () => {
   });
 
   it.each([
+    ["FLOAT6E2M3", [1, 2, 3]],
+    ["FLOAT6E3M2", [1, 3, 2]]
+  ])("distinguishes raw and typed ONNX %s storage", (dtype, widths) => {
+    const raw = createDtypeEducation("onnx", makeTensor(dtype, 4n, 3n, { onnxDataField: "raw_data" }));
+    expect(raw.family).toBe("Floating point");
+    expect(raw.segments.map(({ bits }) => bits)).toEqual(widths);
+    expect(raw.bitsPerValue).toBe(6);
+    expect(raw.packing).toEqual({ values: 4, bytes: 3, bitsPerValue: 6 });
+    expect(raw.storageNote).toContain("unused high bits");
+    expect(raw.tensorBitsPerValue).toBe(6);
+    const typed = createDtypeEducation("onnx", makeTensor(dtype, 4n, 4n, { onnxDataField: "int32_data" }));
+    expect(typed.bitsPerValue).toBe(6);
+    expect(typed.tensorBitsPerValue).toBe(8);
+    expect(typed.packing).toEqual({ values: 1, bytes: 1, bitsPerValue: 6 });
+    expect(typed.storageNote).toContain("bits 6–31 must be zero");
+    expect(typed.onnxDataField).toBe("int32_data");
+    const external = createDtypeEducation("onnx", {
+      ...makeTensor(dtype, 5n, 4n),
+      storage: "external"
+    });
+    expect(external.onnxDataField).toBe("external_data");
+    expect(external.tensorBitsPerValue).toBe(6.4);
+  });
+
+  it.each([
     ["UINT4", 4, 2],
     ["INT2", 2, 4]
   ])(

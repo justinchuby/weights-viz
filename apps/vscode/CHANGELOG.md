@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Recognize ONNX IR 14 `FLOAT6E2M3` and `FLOAT6E3M2`, including packed external
+  byte ranges and canonical inline encodings. Add FP6 bit layouts and worked
+  animations that distinguish packed `raw_data` from `int32_data` varints.
+- Update Hugging Face Hub to 2.17.9 for Xet token-refresh recovery and encoded
+  revision/file-path fixes.
+
 ## 0.5.1
 
 - Load SafeTensors index JSON directly with a bounded stream so mobile WebKit

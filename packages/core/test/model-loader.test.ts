@@ -112,6 +112,40 @@ describe("loadSources", () => {
     expect(models[0]?.diagnostics).toEqual([]);
   });
 
+  it("loads Hugging Face shards through the SDK after streaming a sizeless index", async () => {
+    const shard = safeTensor("shard.safetensors");
+    const bytes = await shard.read(0n, Number(shard.size));
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith(".index.json")) {
+        return Response.json({
+          weight_map: { first: "shard-1.safetensors", second: "shard-2.safetensors" }
+        });
+      }
+      if (!/\/shard-[12]\.safetensors$/.test(url)) {
+        throw new Error(`Unexpected test request: ${url}`);
+      }
+      const range = new Headers(init?.headers).get("range")?.match(/^bytes=(\d+)-(\d+)$/);
+      if (!range) throw new Error("SDK request must use a byte range");
+      const start = Number(range[1]);
+      const end = Number(range[2]);
+      return new Response(bytes.slice(start, end + 1), {
+        status: 206,
+        headers: { "content-range": `bytes ${start}-${end}/${bytes.length}`, etag: '"test-shard"' }
+      });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const models = await loadModelUrl(
+      "https://huggingface.co/org/sharded/resolve/main/model.safetensors.index.json"
+    );
+    expect(models[0]?.name).toBe("org/sharded");
+    expect(models[0]?.files.map((file) => file.name)).toEqual([
+      "shard-1.safetensors", "shard-2.safetensors"
+    ]);
+    expect(models[0]?.files.every((file) => file.tensors.length === 1)).toBe(true);
+    expect(models[0]?.diagnostics).toEqual([]);
+  });
+
   function emptyGguf(name: string): MemorySource {
     const bytes = new Uint8Array(24);
     const view = new DataView(bytes.buffer);
@@ -242,18 +276,39 @@ describe("loadSources", () => {
       "shards/model.onnx.data"
     );
   });
+
+  it.each([27, 28])("infers packed external FP6 type %s ranges, including a partial byte", async (dtype) => {
+    const models = await loadSources([
+      externalOnnx("fp6.data", 16n, undefined, dtype, 5n)
+    ]);
+    expect(models[0]?.files[0]).toMatchObject({ name: "fp6.data", size: 20n });
+    expect(models[0]?.files[0]?.tensors[0]).toMatchObject({
+      dtype: dtype === 27 ? "FLOAT6E2M3" : "FLOAT6E3M2",
+      byteOffset: 16n,
+      byteLength: 4n,
+      encoding: { onnxDataField: "external_data" },
+      sampleSupport: "metadata-only"
+    });
+    expect(models[0]?.diagnostics).toEqual([]);
+    const explicit = await loadSources([
+      externalOnnx("fp6.data", 16n, 7n, dtype, 5n)
+    ]);
+    expect(explicit[0]?.files[0]?.tensors[0]?.byteLength).toBe(7n);
+  });
 });
 
 function externalOnnx(
   location: string,
   offset: bigint,
-  length: bigint
+  length: bigint | undefined,
+  dtype = 1,
+  elements = 4n
 ): MemorySource {
   const tensor = protoMessage(
     5,
     concatBytes(
-      protoVarint(1, 4n),
-      protoVarint(2, 1n),
+      protoVarint(1, elements),
+      protoVarint(2, BigInt(dtype)),
       protoBytes(8, new TextEncoder().encode("weight")),
       protoMessage(
         13,
@@ -269,13 +324,13 @@ function externalOnnx(
           protoBytes(2, new TextEncoder().encode(offset.toString()))
         )
       ),
-      protoMessage(
+      ...(length === undefined ? [] : [protoMessage(
         13,
         concatBytes(
           protoBytes(1, new TextEncoder().encode("length")),
           protoBytes(2, new TextEncoder().encode(length.toString()))
         )
-      ),
+      )]),
       protoVarint(14, 1n)
     )
   );

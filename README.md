@@ -22,12 +22,19 @@ The project ships the same React visualization in two hosts:
 | --- | --- | --- | --- |
 | SafeTensors | All official dtypes, including packed F4/F6, plus header metadata, shape, and exact ranges | On-demand samples and statistics for scalar dtypes | `*.safetensors.index.json` automatically joins shards |
 | GGUF v2/v3 | All current GGML tensor type IDs and block sizes, KV metadata, alignment, and exact ranges | On-demand samples for scalar and supported common quantized dtypes | Standard `model-00001-of-000NN.gguf` shards are grouped as one model |
-| ONNX | All current `TensorProto.DataType` values through `INT2`, initializer shape, and exact external-data ranges | Metadata only | Referenced `.data` address spaces are inferred from the manifest; the data files are not required |
+| ONNX | `TensorProto.DataType` values through ONNX IR 14 `FLOAT6E2M3` / `FLOAT6E3M2`, initializer shape, and exact external-data ranges | Metadata only | Referenced `.data` address spaces are inferred from the manifest; the data files are not required |
 
 Recognizing a dtype and calculating its encoded byte length are separate from
 numeric decoding. Known GGML quantization types remain accurately sized and
 named even when value sampling is unavailable. Future unknown type IDs remain
 visible using their declared file ranges and produce a diagnostic.
+ONNX FP6 raw/external payloads use a packed LSB-first stream (four values in
+three bytes); `int32_data` instead uses one unsigned six-bit code per protobuf
+varint. The map preserves the physical payload ranges rather than assuming
+every FP6 initializer occupies 0.75 bytes per element. Inline FP6 payload
+lengths, raw padding bits, and typed code ranges are checked; external payload
+contents are not read or validated.
+
 Click any dtype label in the legend, tensor inspector, or comparison details to
 open a visual guide to its bit fields, byte packing, quantization blocks,
 scales, offsets, and effective bits per weight. Playable encoding stories cover

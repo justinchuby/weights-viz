@@ -251,7 +251,9 @@ const ONNX_DTYPE_BITS: Readonly<Record<string, number>> = {
   FLOAT4E2M1: 4,
   FLOAT8E8M0: 8,
   UINT2: 2,
-  INT2: 2
+  INT2: 2,
+  FLOAT6E2M3: 6,
+  FLOAT6E3M2: 6
 };
 
 function compareBigInt(left: bigint, right: bigint): number {

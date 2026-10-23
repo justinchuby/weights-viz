@@ -41,7 +41,9 @@ const ONNX_DATA_TYPE_NAMES: Record<number, string> = {
   23: "FLOAT4E2M1",
   24: "FLOAT8E8M0",
   25: "UINT2",
-  26: "INT2"
+  26: "INT2",
+  27: "FLOAT6E2M3",
+  28: "FLOAT6E3M2"
 };
 
 export const ONNX_DTYPE_CATALOG: readonly DtypeCatalogEntry[] = Object.freeze(
@@ -322,6 +324,7 @@ function parseTensorProto(
   let rawDataOffset: bigint | undefined;
   let rawDataLength = 0n;
   const typedDataSegments: Array<{ byteOffset: bigint; byteLength: bigint }> = [];
+  const int32DataRanges: Array<{ start: number; end: number }> = [];
   const externalData: OnnxExternalData = {};
 
   const markTypedData = (startOffset: number, endOffset: number) => {
@@ -371,11 +374,17 @@ function parseTensorProto(
         if (wireType === 2) {
           const range = readLengthDelimitedRange(bytes, offset, end);
           markTypedData(range.valueStart, range.valueEnd);
+          if (fieldNumber === 5) {
+            int32DataRanges.push({ start: range.valueStart, end: range.valueEnd });
+          }
           offset = range.next;
         } else if (wireType === 0 && (fieldNumber === 5 || fieldNumber === 7)) {
           const valueStart = offset;
           const value = readVarint(bytes, offset, end);
           markTypedData(valueStart, value.next);
+          if (fieldNumber === 5) {
+            int32DataRanges.push({ start: valueStart, end: value.next });
+          }
           offset = value.next;
         } else if (wireType === 5 && fieldNumber === 4) {
           markTypedData(offset, offset + 4);
@@ -451,6 +460,10 @@ function parseTensorProto(
     externalData.offset !== undefined ||
     externalData.length !== undefined;
   const dataTypeName = ONNX_DATA_TYPE_NAMES[dataType] ?? `UNKNOWN(${dataType})`;
+  const float6 = dataType === 27 || dataType === 28;
+  if (float6 && !inferredExternal) {
+    validateFloat6Data(bytes, dims, rawDataOffset, rawDataLength, int32DataRanges);
+  }
   const dataLocationName =
     ONNX_DATA_LOCATION_NAMES[dataLocation] ?? (inferredExternal ? "EXTERNAL" : `UNKNOWN(${dataLocation})`);
   const firstTypedSegment = typedDataSegments[0];
@@ -480,6 +493,17 @@ function parseTensorProto(
     byteOffset,
     byteLength,
     sampleSupport: "metadata-only",
+    ...(float6
+      ? {
+          encoding: {
+            onnxDataField: inferredExternal
+              ? "external_data"
+              : rawDataOffset !== undefined
+                ? "raw_data"
+                : "int32_data"
+          }
+        }
+      : {}),
     storage: inferredExternal ? "external" : "inline"
   };
   if (!inferredExternal && rawDataOffset !== undefined) {
@@ -516,6 +540,48 @@ function parseTensorProto(
     },
     tensor
   };
+}
+
+function validateFloat6Data(
+  bytes: Uint8Array,
+  dims: bigint[],
+  rawOffset: bigint | undefined,
+  rawLength: bigint,
+  int32Ranges: Array<{ start: number; end: number }>
+): void {
+  if (dims.some((dimension) => dimension < 0n)) {
+    throw new ParseError("ONNX FLOAT6 dimensions must be non-negative");
+  }
+  const elements = dims.reduce((count, dimension) => count * dimension, 1n);
+  if (rawOffset !== undefined) {
+    const expectedBytes = (elements * 6n + 7n) / 8n;
+    if (rawLength !== expectedBytes) {
+      throw new ParseError(`ONNX FLOAT6 raw_data requires ${expectedBytes} bytes, received ${rawLength}`);
+    }
+    const usedBits = Number((elements * 6n) % 8n);
+    if (usedBits !== 0) {
+      const lastByte = bytes[Number(rawOffset + rawLength - 1n)]!;
+      if ((lastByte >> usedBits) !== 0) {
+        throw new ParseError("ONNX FLOAT6 raw_data has non-zero padding bits");
+      }
+    }
+    return;
+  }
+  let count = 0n;
+  for (const range of int32Ranges) {
+    let offset = range.start;
+    while (offset < range.end) {
+      const value = readVarint(bytes, offset, range.end);
+      if (value.value > 63n) {
+        throw new ParseError("ONNX FLOAT6 int32_data must contain unsigned 6-bit codes (0–63)", BigInt(offset));
+      }
+      count += 1n;
+      offset = value.next;
+    }
+  }
+  if (count !== elements) {
+    throw new ParseError(`ONNX FLOAT6 int32_data requires ${elements} elements, received ${count}`);
+  }
 }
 
 function parseStringStringEntry(

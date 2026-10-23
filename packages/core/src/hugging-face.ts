@@ -34,7 +34,7 @@ export class HuggingFaceHubSource implements RandomAccessSource {
     path?: string
   ) {
     this.size = BigInt(blob.size);
-    this.name = decodeURIComponent(path?.split("/").pop() || "remote");
+    this.name = path?.split("/").pop() || "remote";
   }
 
   static async create(

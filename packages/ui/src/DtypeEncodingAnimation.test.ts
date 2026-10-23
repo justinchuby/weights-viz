@@ -34,7 +34,7 @@ describe("dtype animation coverage", () => {
       ...ONNX_DTYPE_CATALOG
     ];
 
-    expect(entries).toHaveLength(92);
+    expect(entries).toHaveLength(94);
     expect(
       entries.every((entry) =>
         Boolean(dtypeAnimationKind(entry.format, entry.dtype))
@@ -142,6 +142,39 @@ describe("dtype animation coverage", () => {
       action: "read sign-mask position 6"
     });
   });
+
+  it.each(["FLOAT6E2M3", "FLOAT6E3M2"])(
+    "animates both ONNX %s storage representations",
+    (dtype) => {
+      const raw = story("onnx", dtype, 4, 3);
+      expect(raw.kind).toBe("floating");
+      expect(raw.storage).toEqual(["81", "30", "10"]);
+      const stream = raw.storage.reduce(
+        (value, byte, index) => value | (parseInt(byte, 16) << (8 * index)),
+        0
+      );
+      expect([0, 1, 2, 3].map((index) => (stream >> (6 * index)) & 63)).toEqual(
+        [1, 2, 3, 4]
+      );
+      expect(raw.stages[2]?.detail).toContain("unused high bits");
+      const typed = createDtypeAnimationStory(
+        "onnx",
+        createDtypeEducation("onnx", {
+          id: dtype,
+          name: dtype,
+          fileId: "test",
+          dtype,
+          shape: [4n],
+          byteOffset: 0n,
+          byteLength: 4n,
+          sampleSupport: "metadata-only",
+          encoding: { onnxDataField: "int32_data" }
+        })
+      );
+      expect(typed.storage).toEqual(["01", "02", "03", "04"]);
+      expect(typed.stages[2]?.detail).toContain("field tags");
+    }
+  );
 });
 
 function story(

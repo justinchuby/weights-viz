@@ -9,7 +9,7 @@ import {
 describe("dtype catalogs", () => {
   it("exposes every parser catalog with stable unique identifiers", () => {
     expect(SAFETENSORS_DTYPE_CATALOG).toHaveLength(22);
-    expect(ONNX_DTYPE_CATALOG).toHaveLength(27);
+    expect(ONNX_DTYPE_CATALOG).toHaveLength(29);
     expect(GGUF_DTYPE_CATALOG).toHaveLength(43);
 
     for (const catalog of [
@@ -34,7 +34,9 @@ describe("dtype catalogs", () => {
     expect(ONNX_DTYPE_CATALOG).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ dtype: "FLOAT4E2M1", typeId: 23 }),
-        expect.objectContaining({ dtype: "INT2", typeId: 26 })
+        expect.objectContaining({ dtype: "INT2", typeId: 26 }),
+        expect.objectContaining({ dtype: "FLOAT6E2M3", typeId: 27 }),
+        expect.objectContaining({ dtype: "FLOAT6E3M2", typeId: 28 })
       ])
     );
     expect(GGUF_DTYPE_CATALOG).toEqual(

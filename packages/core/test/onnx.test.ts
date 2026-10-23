@@ -202,7 +202,9 @@ describe("OnnxParser", () => {
       const tensors = [
         { id: 24, name: "FLOAT8E8M0" },
         { id: 25, name: "UINT2" },
-        { id: 26, name: "INT2" }
+        { id: 26, name: "INT2" },
+        { id: 27, name: "FLOAT6E2M3" },
+        { id: 28, name: "FLOAT6E3M2" }
       ].map(({ id, name }) =>
         messageField(
           5,
@@ -225,8 +227,77 @@ describe("OnnxParser", () => {
       expect(parsed.tensors.map((tensor) => tensor.dtype)).toEqual([
         "FLOAT8E8M0",
         "UINT2",
-        "INT2"
+        "INT2",
+        "FLOAT6E2M3",
+        "FLOAT6E3M2"
       ]);
+  });
+
+  it.each([27, 28])("preserves packed FP6 type %s payload offsets and partial groups", async (id) => {
+    for (const [elements, payload] of [
+      [0, []],
+      [1, [0x01]],
+      [2, [0x81, 0x00]],
+      [3, [0x81, 0x30, 0x00]],
+      [4, [0x81, 0x30, 0x10]],
+      [5, [0x81, 0x30, 0x10, 0x05]]
+    ] as const) {
+      const bytes = toUint8Array(messageField(7, messageField(5, concat(
+        varintField(1, BigInt(elements)),
+        varintField(2, BigInt(id)),
+        bytesField(9, payload, "fp6")
+      ))));
+      const parsed = await new OnnxParser().parse(new MemorySource("fp6.onnx", bytes.bytes));
+      const offset = BigInt(requireMark(bytes.marks, "fp6"));
+      expect(parsed.tensors[0]).toMatchObject({
+        dtype: id === 27 ? "FLOAT6E2M3" : "FLOAT6E3M2",
+        byteOffset: offset,
+        byteLength: BigInt(payload.length),
+        byteSegments: [{ byteOffset: offset, byteLength: BigInt(payload.length) }],
+        encoding: { onnxDataField: "raw_data" },
+        sampleSupport: "metadata-only"
+      });
+    }
+  });
+
+  it.each([27, 28])("maps packed and unpacked int32_data for FP6 type %s", async (id) => {
+    const bytes = toUint8Array(messageField(7, messageField(5, concat(
+      varintField(1, 4n),
+      varintField(2, BigInt(id)),
+      bytesField(5, [1, 2], "packedCodes"),
+      stringField(8, "fp6_typed"),
+      withMark(varintField(5, 3n), "unpackedCode"),
+      bytesField(5, [63], "lastCode")
+    ))));
+    const parsed = await new OnnxParser().parse(new MemorySource("typed-fp6.onnx", bytes.bytes));
+    expect(parsed.tensors[0]).toMatchObject({
+      byteLength: 4n,
+      encoding: { onnxDataField: "int32_data" },
+      byteSegments: [
+        { byteOffset: BigInt(requireMark(bytes.marks, "packedCodes")), byteLength: 2n },
+        { byteOffset: BigInt(requireMark(bytes.marks, "unpackedCode") + 1), byteLength: 1n },
+        { byteOffset: BigInt(requireMark(bytes.marks, "lastCode")), byteLength: 1n }
+      ]
+    });
+  });
+
+  it.each([
+    { elements: 1, field: 9, payload: [0x40], error: /padding/ },
+    { elements: 2, field: 9, payload: [0, 0x10], error: /padding/ },
+    { elements: 3, field: 9, payload: [0, 0, 0x04], error: /padding/ },
+    { elements: 4, field: 9, payload: [0, 0], error: /requires 3 bytes/ },
+    { elements: 1, field: 5, payload: [64], error: /unsigned 6-bit/ },
+    { elements: 1, field: 5, payload: [0xff, 0xff, 0xff, 0xff, 0x0f], error: /unsigned 6-bit/ },
+    { elements: 2, field: 5, payload: [1], error: /requires 2 elements/ }
+  ])("rejects non-canonical FP6 encodings: $field / $payload", async ({ elements, field, payload, error }) => {
+    for (const id of [27, 28]) {
+      const bytes = toUint8Array(messageField(7, messageField(5, concat(
+        varintField(1, BigInt(elements)),
+        varintField(2, BigInt(id)),
+        bytesField(field, payload)
+      ))));
+      await expect(new OnnxParser().parse(new MemorySource("invalid-fp6.onnx", bytes.bytes))).rejects.toThrow(error);
+    }
   });
 
   it("rejects malformed length-delimited protobuf fields", async () => {

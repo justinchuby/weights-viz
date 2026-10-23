@@ -50,6 +50,7 @@ export interface DtypeEducation {
   family: string;
   summary: string;
   storageNote: string;
+  onnxDataField?: "raw_data" | "int32_data" | "external_data";
   bitsPerValue?: number;
   segments: EncodingSegment[];
   packing?: PackingGroup;
@@ -83,6 +84,8 @@ const FIXED_WIDTH_BITS: Record<string, number> = {
   F4: 4,
   F6_E2M3: 6,
   F6_E3M2: 6,
+  FLOAT6E2M3: 6,
+  FLOAT6E3M2: 6,
   U8: 8,
   UINT8: 8,
   I8: 8,
@@ -132,6 +135,8 @@ const FLOAT_LAYOUTS: Record<string, [number, number, number]> = {
   FLOAT4E2M1: [1, 2, 1],
   F6_E2M3: [1, 2, 3],
   F6_E3M2: [1, 3, 2],
+  FLOAT6E2M3: [1, 2, 3],
+  FLOAT6E3M2: [1, 3, 2],
   F8_E4M3: [1, 4, 3],
   F8_E4M3FNUZ: [1, 4, 3],
   FLOAT8E4M3FN: [1, 4, 3],
@@ -293,6 +298,14 @@ export function createDtypeEducation(
     resolvedBits !== undefined &&
     resolvedBits < 16 &&
     (dtype.includes("FLOAT") || dtype.startsWith("F"));
+  const onnxFloat6 =
+    format === "onnx" && (dtype === "FLOAT6E2M3" || dtype === "FLOAT6E3M2");
+  const onnxDataField = tensor.storage === "external"
+    ? "external_data"
+    : tensor.encoding?.onnxDataField === "int32_data"
+      ? "int32_data"
+      : "raw_data";
+  const typedFloat6 = onnxFloat6 && onnxDataField === "int32_data";
 
   return {
     format,
@@ -302,11 +315,20 @@ export function createDtypeEducation(
     summary:
       scalar?.summary ??
       `The file declares ${dtype}, but its exact bit layout is not described by this version of the visualizer.`,
-    storageNote: formatStorageNote(format, dtype),
+    storageNote: onnxFloat6
+      ? typedFloat6
+        ? `${dtype} uses TensorProto int32_data here: each entry holds one unsigned 6-bit code in bits 0–5; bits 6–31 must be zero. Canonical protobuf varints occupy one byte per element, not four values per three bytes. Field tags and length prefixes are not tensor payload bytes.`
+        : `${dtype} raw_data and external data use a contiguous LSB-first 6-bit stream: four values occupy three bytes. The payload is ceil(6 × elementCount / 8) bytes, with unused high bits of the final byte zeroed. TensorProto can alternatively store one code per int32_data entry.`
+      : formatStorageNote(format, dtype),
+    ...(onnxFloat6 ? { onnxDataField } : {}),
     ...(resolvedBits !== undefined ? { bitsPerValue: resolvedBits } : {}),
     segments,
     ...(resolvedBits !== undefined
-      ? { packing: packingForBits(resolvedBits) }
+      ? {
+          packing: typedFloat6
+            ? { values: 1, bytes: 1, bitsPerValue: 6 }
+            : packingForBits(resolvedBits)
+        }
       : {}),
     ...(lowBitInteger
       ? {
@@ -333,7 +355,23 @@ export function createDtypeEducation(
               }
             }
           : {}),
-    concepts: scalarConcepts(format, dtype, scalar),
+    concepts: [
+      ...scalarConcepts(format, dtype, scalar),
+      ...(onnxFloat6
+        ? [
+            {
+              term: "Raw vs typed storage",
+              explanation:
+                "raw_data packs four FP6 codes into three bytes; int32_data stores one code per protobuf varint. Both represent the same six-bit floating-point values, but occupy different physical byte ranges."
+            },
+            {
+              term: "Packed byte order",
+              explanation:
+                "For six-bit codes x0…x3: byte0 = x0 | ((x1 & 3) << 6); byte1 = (x1 >> 2) | ((x2 & 15) << 4); byte2 = (x2 >> 4) | (x3 << 2). A partial final group writes only the required bytes and zeroes unused high bits."
+            }
+          ]
+        : [])
+    ],
     elementCount,
     ...(tensorBitsPerValue !== undefined ? { tensorBitsPerValue } : {}),
     ...(f32CompressionRatio !== undefined ? { f32CompressionRatio } : {})
