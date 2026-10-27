@@ -154,8 +154,11 @@ Add a write-capable `HF_TOKEN` Actions secret to create and update the Space.
 
 ## Development
 
-Requirements: Node.js 22.13+ (22.x), 24.x, or 26+ and pnpm 11.24.0
+Requirements: Node.js 22.13+ (22.x), 24.x, or 26+ and pnpm 12.14.0
 (pinned in `package.json`).
+
+Keep pnpm's supply-chain policy checks enabled. The workspace permits
+install-time dependency builds only for `esbuild` and `@vscode/vsce-sign`.
 
 ```sh
 pnpm install
@@ -200,7 +203,7 @@ pin when the newer package is available, and run the Hub integration tests
 before changing it.
 
 Pushes to `main` deploy the static app through GitHub Pages. Version tags such
-as `v0.5.3` create a GitHub release containing the VSIX, then dispatch the
+as `v0.5.4` create a GitHub release containing the VSIX, then dispatch the
 Marketplace publishing workflow. A GitHub release published manually triggers
 the same Marketplace workflow.
 

@@ -2,9 +2,19 @@
 
 ## Unreleased
 
+## 0.5.4
+
 - Search `gap` / `bubble` (including plurals) to find, highlight, and navigate
   unreferenced byte ranges in single-model and comparison views, with exact
   file/range details. Normal tensor name and dtype searches are preserved.
+- Upgrade VSIX packaging to VSCE 4 and its `marked` Markdown renderer, removing
+  obsolete native dependencies and build permissions.
+- Refresh React, Vite, test tooling, icons, and types while retaining the
+  `brace-expansion` 5.0.12 and `qs` 6.16.1 dependency fixes.
+- Pin pnpm 12.14.0 consistently for development, CI, packaging, and deployment,
+  retaining frozen-lockfile installs and supply-chain policy verification.
+- Pin Hugging Face Hub to the user-approved 2.17.8 compatibility version while
+  2.17.9 is unavailable in the approved registry.
 
 ## 0.5.3
 
