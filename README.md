@@ -39,8 +39,10 @@ ONNX parsing scans bounded 64 KiB windows and skips embedded `raw_data` and
 packed typed-field payloads instead of loading the protobuf container in full.
 Unpacked typed fields retain their individual physical ranges. Tensor attributes,
 subgraphs, sparse values/indices, local functions, and training graphs are
-included. The 64 MiB metadata budget applies to metadata and protobuf framing,
-not tensor payload bytes; it is not a model-file size limit. Tensor values are
+included. Local ONNX files have no default metadata-size cap; callers can still
+set an explicit parser budget. Remote ONNX loading retains a 64 MiB budget for
+metadata/framing and a separate 64 MiB budget for bytes read, including
+read-ahead, rather than limiting the model-file size. Tensor values are
 not decoded (apart from the FP6 checks described above), and parsing is not a
 substitute for ONNX semantic/model validation.
 

@@ -2,6 +2,7 @@ import { bigintToSafeNumber } from "../binary";
 import { ParseError } from "../errors";
 import {
   DEFAULT_MAX_METADATA_BYTES,
+  REMOTE_FULL_DOWNLOAD_MAX_BYTES,
   type DtypeCatalogEntry,
   type ParseOptions,
   type ParsedFile,
@@ -112,7 +113,9 @@ export class OnnxParser implements Parser {
 
   async parse(source: RandomAccessSource, options: ParseOptions = {}): Promise<ParsedFile> {
     options.signal?.throwIfAborted();
-    const maxMetadataBytes = resolveOnnxMetadataLimit(options.maxMetadataBytes);
+    const maxMetadataBytes = resolveOnnxMetadataLimit(
+      options.maxMetadataBytes ?? (source.url ? DEFAULT_MAX_METADATA_BYTES : undefined)
+    );
     const reader = new OnnxReader(source, maxMetadataBytes, options.signal);
     const parsed = await parseModelProto(reader, source.id);
     options.signal?.throwIfAborted();
@@ -134,10 +137,11 @@ class OnnxReader {
   private cache: Uint8Array = new Uint8Array();
   private cacheStart = 0;
   private metadataBytes = 0;
+  private readBytes = 0;
 
   constructor(
     private readonly source: RandomAccessSource,
-    private readonly limit: number,
+    private readonly limit: number | undefined,
     private readonly signal?: AbortSignal
   ) {
     this.byteLength = bigintToSafeNumber(source.size, "ONNX file size");
@@ -146,7 +150,7 @@ class OnnxReader {
   charge(length: number): void {
     this.signal?.throwIfAborted();
     this.metadataBytes += length;
-    if (this.metadataBytes > this.limit) {
+    if (this.limit !== undefined && this.metadataBytes > this.limit) {
       throw new ParseError(`ONNX metadata exceeds the ${this.limit} byte limit`);
     }
   }
@@ -156,7 +160,11 @@ class OnnxReader {
     if (offset < this.cacheStart || offset >= this.cacheStart + this.cache.length) {
       this.cacheStart = offset;
       const length = Math.min(64 * 1024, this.byteLength - offset);
+      if (this.source.url && this.readBytes + length > REMOTE_FULL_DOWNLOAD_MAX_BYTES) {
+        throw new ParseError(`Remote ONNX reads exceed the ${REMOTE_FULL_DOWNLOAD_MAX_BYTES} byte download limit`);
+      }
       this.cache = await this.source.read(BigInt(offset), length, this.signal);
+      this.readBytes += this.cache.length;
       if (this.cache.length !== length) {
         throw new ParseError("Truncated ONNX source read", BigInt(offset));
       }
@@ -179,12 +187,11 @@ class OnnxReader {
   }
 }
 
-function resolveOnnxMetadataLimit(value?: number): number {
-  const candidate = value ?? DEFAULT_MAX_METADATA_BYTES;
-  if (!Number.isSafeInteger(candidate) || candidate <= 0) {
+function resolveOnnxMetadataLimit(value?: number): number | undefined {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
     throw new ParseError(`Invalid ONNX metadata byte limit: ${value}`);
   }
-  return candidate;
+  return value;
 }
 
 function buildFileMetadata(parsed: ParsedOnnxModel): Record<string, unknown> {

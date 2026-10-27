@@ -73,6 +73,60 @@ describe("OnnxParser", () => {
     })).rejects.toThrow(/metadata exceeds/);
   });
 
+  it("does not cap local ONNX metadata at 64 MiB", async () => {
+    const { source, reads } = virtualTensor(12);
+    const parsed = await new OnnxParser().parse(source);
+    expect(parsed.tensors[0]).toMatchObject({ name: "large", byteLength: 1n });
+    expect(reads.every((read) => read.length <= 64 * 1024)).toBe(true);
+    expect(reads.reduce((sum, read) => sum + read.length, 0)).toBeLessThan(128 * 1024);
+  });
+
+  it("retains a default metadata budget for remote ONNX", async () => {
+    const { source } = virtualTensor(12);
+    await expect(new OnnxParser().parse({
+      ...source, url: "https://example.test/large.onnx"
+    })).rejects.toThrow(/metadata exceeds the 67108864 byte limit/);
+  });
+
+  it("caps remote read-ahead downloads independently of metadata size", async () => {
+    const tensor = toUint8Array(concat(
+      varintField(1, 128n * 1024n), varintField(2, 2n),
+      { bytes: [...encodeVarint(74), ...encodeVarint(128 * 1024)], marks: {} }
+    )).bytes;
+    const tensorLength = tensor.length + 128 * 1024;
+    const tensorPrefix = Uint8Array.from([
+      ...encodeVarint(42), ...encodeVarint(tensorLength), ...tensor
+    ]);
+    const blockSize = tensorPrefix.length + 128 * 1024;
+    const graphLength = blockSize * 1025;
+    const graphPrefix = Uint8Array.from([...encodeVarint(58), ...encodeVarint(graphLength)]);
+    const size = graphPrefix.length + graphLength;
+    let downloaded = 0;
+    const source: RandomAccessSource = {
+      id: "remote", name: "read-ahead.onnx", url: "https://example.test/read-ahead.onnx",
+      size: BigInt(size),
+      async read(offset, length) {
+        const start = Number(offset);
+        const bytes = new Uint8Array(length);
+        if (start < graphPrefix.length) {
+          bytes.set(graphPrefix.subarray(start, Math.min(start + length, graphPrefix.length)));
+        }
+        let block = Math.max(0, Math.floor((start - graphPrefix.length) / blockSize));
+        while (graphPrefix.length + block * blockSize < start + length) {
+          const blockStart = graphPrefix.length + block * blockSize;
+          const from = Math.max(start, blockStart);
+          const to = Math.min(start + length, blockStart + tensorPrefix.length);
+          if (from < to) bytes.set(tensorPrefix.subarray(from - blockStart, to - blockStart), from - start);
+          block++;
+        }
+        downloaded += length;
+        return bytes;
+      }
+    };
+    await expect(new OnnxParser().parse(source)).rejects.toThrow(/byte download limit/);
+    expect(downloaded).toBe(64 * 1024 * 1024);
+  });
+
   it("counts metadata cumulatively across separate fields", async () => {
     const bytes = toUint8Array(concat(
       stringField(2, "a".repeat(80)), stringField(3, "b".repeat(80))
@@ -260,12 +314,13 @@ describe("OnnxParser", () => {
     dataOffset: number;
     payloadLength: number;
   } {
-    const dtype = ({ 4: 1, 5: 2, 6: 8, 7: 7, 9: 2, 10: 11, 11: 13 } as Record<number, number>)[field]!;
-    const elements = field === 4 ? payloadLength / 4 : field === 10 ? payloadLength / 8 : field === 6 ? 1 : payloadLength;
+    const dtype = ({ 4: 1, 5: 2, 6: 8, 7: 7, 9: 2, 10: 11, 11: 13, 12: 2 } as Record<number, number>)[field]!;
+    const elements = field === 4 ? payloadLength / 4 : field === 10 ? payloadLength / 8 : field === 6 || field === 12 ? 1 : payloadLength;
     const suffix = toUint8Array(concat(
       varintField(1, BigInt(elements)),
       varintField(2, BigInt(dtype)),
-      stringField(8, "large")
+      stringField(8, "large"),
+      ...(field === 12 ? [bytesField(9, [0])] : [])
     )).bytes;
     let prefix = [...encodeVarint((field << 3) | 2), ...encodeVarint(payloadLength)];
     for (const wrapper of [...path].reverse()) {
