@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.5.3
+
+- Load large ONNX models using bounded random-access reads instead of treating
+  embedded raw and typed tensor payloads as metadata. Local ONNX files no
+  longer have a default metadata-size cap.
+- Use ranged HTTP and Hugging Face sources for remote ONNX models, with
+  separate metadata and download budgets instead of a whole-file size limit.
+- Preserve embedded tensors alongside external-data layouts in mixed-storage
+  models, and include tensor attributes, subgraphs, sparse values/indices,
+  local functions, and training graphs.
+- Retain protobuf bounds checks, cancellation, and FP6 validation, with
+  regression coverage for large payloads, malformed fields, and remote limits.
+
 ## 0.5.2
 
 - Recognize ONNX IR 14 `FLOAT6E2M3` and `FLOAT6E3M2`, including packed external

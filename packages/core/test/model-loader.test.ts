@@ -277,6 +277,67 @@ describe("loadSources", () => {
     );
   });
 
+  it("preserves embedded tensors alongside inferred external address spaces", async () => {
+    const models = await loadSources([externalOnnx("weights.data", 128n, 16n, 1, 4n, true)]);
+    expect(models[0]?.files.map((file) => file.name)).toEqual(["model.onnx", "weights.data"]);
+    expect(models[0]?.files[0]?.tensors[0]).toMatchObject({
+      name: "inline", byteLength: 4n, storage: "inline"
+    });
+    expect(models[0]?.files[1]?.tensors[0]).toMatchObject({
+      name: "weight", byteOffset: 128n, byteLength: 16n, storage: "external"
+    });
+    expect(models[0]?.diagnostics).toEqual([]);
+  });
+
+  it("retains ONNX metadata when the graph has no tensors", async () => {
+    const models = await loadSources([new MemorySource("empty.onnx", Uint8Array.from([0x3a, 0]))]);
+    expect(models[0]?.files).toHaveLength(1);
+    expect(models[0]?.files[0]?.metadata.initializer_count).toBe(0);
+  });
+
+  it.each([
+    "https://example.test/large.onnx",
+    "https://huggingface.co/org/model/resolve/main/large.onnx"
+  ])("opens a large remote ONNX model using bounded ranges: %s", async (url) => {
+    const payloadLength = 128 * 1024 * 1024;
+    const tensorPrefix = concatBytes(
+      protoVarint(1, BigInt(payloadLength)),
+      protoVarint(2, 2n),
+      protoBytes(8, new TextEncoder().encode("large")),
+      encodeVarint(74n), encodeVarint(BigInt(payloadLength))
+    );
+    const tensorLength = tensorPrefix.length + payloadLength;
+    const graphPrefix = [...encodeVarint(42n), ...encodeVarint(BigInt(tensorLength))];
+    const graphLength = graphPrefix.length + tensorLength;
+    const prefix = Uint8Array.from([
+      ...encodeVarint(58n), ...encodeVarint(BigInt(graphLength)), ...graphPrefix, ...tensorPrefix
+    ]);
+    const size = prefix.length + payloadLength;
+    let downloaded = 0;
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      expect(String(input)).toBe(url);
+      const range = new Headers(init?.headers).get("range")?.match(/^bytes=(\d+)-(\d+)$/);
+      if (!range) throw new Error("ONNX download must request a range");
+      const start = Number(range[1]);
+      const end = Math.min(Number(range[2]), size - 1);
+      const length = end - start + 1;
+      expect(length).toBeLessThanOrEqual(64 * 1024);
+      downloaded += length;
+      const bytes = new Uint8Array(length);
+      if (start < prefix.length) bytes.set(prefix.subarray(start, Math.min(end + 1, prefix.length)));
+      return new Response(bytes, {
+        status: 206,
+        headers: { "content-range": `bytes ${start}-${end}/${size}`, etag: '"large-onnx"' }
+      });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const models = await loadModelUrl(url);
+    expect(models[0]?.files[0]?.tensors[0]).toMatchObject({
+      name: "large", byteOffset: BigInt(prefix.length), byteLength: BigInt(payloadLength)
+    });
+    expect(downloaded).toBeLessThan(128 * 1024);
+  });
+
   it.each([27, 28])("infers packed external FP6 type %s ranges, including a partial byte", async (dtype) => {
     const models = await loadSources([
       externalOnnx("fp6.data", 16n, undefined, dtype, 5n)
@@ -302,7 +363,8 @@ function externalOnnx(
   offset: bigint,
   length: bigint | undefined,
   dtype = 1,
-  elements = 4n
+  elements = 4n,
+  includeInline = false
 ): MemorySource {
   const tensor = protoMessage(
     5,
@@ -336,7 +398,13 @@ function externalOnnx(
   );
   return new MemorySource(
     "model.onnx",
-    Uint8Array.from(protoMessage(7, tensor))
+    Uint8Array.from(protoMessage(7, concatBytes(tensor, ...(includeInline ? [
+      protoMessage(5, concatBytes(
+        protoVarint(1, 1n), protoVarint(2, 1n),
+        protoBytes(8, new TextEncoder().encode("inline")),
+        protoBytes(9, new Uint8Array(4))
+      ))
+    ] : []))))
   );
 }
 

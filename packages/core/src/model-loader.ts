@@ -1,6 +1,5 @@
 import { bigintToSafeNumber } from "./binary";
 import {
-  fetchRemoteOnnx,
   HttpRangeSource,
   MemorySource
 } from "./data-source";
@@ -15,7 +14,6 @@ import { GgufParser } from "./parsers/gguf";
 import { OnnxParser } from "./parsers/onnx";
 import { SafeTensorsParser } from "./parsers/safetensors";
 import {
-  REMOTE_ONNX_MAX_BYTES,
   SAFETENSORS_INDEX_MAX_BYTES,
   type Diagnostic,
   type ParsedFile,
@@ -291,13 +289,7 @@ async function loadRemoteOnnx(
   onSource?: (source: RandomAccessSource) => void,
   onProgress?: RemoteLoadProgressCallback
 ): Promise<ParsedModel> {
-  const manifestSource = await fetchRemoteOnnx(
-    url,
-    REMOTE_ONNX_MAX_BYTES,
-    signal,
-    undefined,
-    onProgress
-  );
+  const manifestSource = await createRemoteSource(url, signal, onProgress);
   onSource?.(manifestSource);
   const manifest = await parsers.onnx.parse(
     manifestSource,

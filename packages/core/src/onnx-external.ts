@@ -59,13 +59,10 @@ export function materializeOnnxModel(
   const diagnostics: Diagnostic[] = [...manifest.diagnostics];
   const files: ParsedFile[] = [];
   const usedSourceIds = new Set<string>();
-  const hasExternalTensors = manifest.tensors.some(
-    (tensor) => tensor.storage === "external"
-  );
   const inlineTensors = manifest.tensors.filter(
     (tensor) => tensor.storage !== "external"
   );
-  if (!hasExternalTensors && inlineTensors.length > 0) {
+  if (inlineTensors.length > 0 || manifest.tensors.length === 0) {
     files.push({ ...manifest, tensors: inlineTensors });
   }
 

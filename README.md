@@ -22,7 +22,7 @@ The project ships the same React visualization in two hosts:
 | --- | --- | --- | --- |
 | SafeTensors | All official dtypes, including packed F4/F6, plus header metadata, shape, and exact ranges | On-demand samples and statistics for scalar dtypes | `*.safetensors.index.json` automatically joins shards |
 | GGUF v2/v3 | All current GGML tensor type IDs and block sizes, KV metadata, alignment, and exact ranges | On-demand samples for scalar and supported common quantized dtypes | Standard `model-00001-of-000NN.gguf` shards are grouped as one model |
-| ONNX | `TensorProto.DataType` values through ONNX IR 14 `FLOAT6E2M3` / `FLOAT6E3M2`, initializer shape, and exact external-data ranges | Metadata only | Referenced `.data` address spaces are inferred from the manifest; the data files are not required |
+| ONNX | `TensorProto.DataType` values through ONNX IR 14 `FLOAT6E2M3` / `FLOAT6E3M2`, tensor shapes, and exact inline/external ranges | Metadata only | Embedded tensors and referenced external-data address spaces are shown together; the data files are not required |
 
 Recognizing a dtype and calculating its encoded byte length are separate from
 numeric decoding. Known GGML quantization types remain accurately sized and
@@ -34,6 +34,17 @@ varint. The map preserves the physical payload ranges rather than assuming
 every FP6 initializer occupies 0.75 bytes per element. Inline FP6 payload
 lengths, raw padding bits, and typed code ranges are checked; external payload
 contents are not read or validated.
+
+ONNX parsing scans bounded 64 KiB windows and skips embedded `raw_data` and
+packed typed-field payloads instead of loading the protobuf container in full.
+Unpacked typed fields retain their individual physical ranges. Tensor attributes,
+subgraphs, sparse values/indices, local functions, and training graphs are
+included. Local ONNX files have no default metadata-size cap; callers can still
+set an explicit parser budget. Remote ONNX loading retains a 64 MiB budget for
+metadata/framing and a separate 64 MiB budget for bytes read, including
+read-ahead, rather than limiting the model-file size. Tensor values are
+not decoded (apart from the FP6 checks described above), and parsing is not a
+substitute for ONNX semantic/model validation.
 
 Click any dtype label in the legend, tensor inspector, or comparison details to
 open a visual guide to its bit fields, byte packing, quantization blocks,
@@ -113,8 +124,8 @@ to browse its GGUF, SafeTensors, and ONNX files, paste a model URL, or run
 - Load any number of remote models by repeating the parameter:
   `?url=<model-a>&url=<model-b>&url=<model-c>`. The URL field also accepts
   multiple links separated by spaces or newlines.
-- GGUF and SafeTensors are read progressively. Only the header, tensor
-  directory, and explicitly requested sample ranges are fetched.
+- GGUF, SafeTensors, and ONNX are read progressively. Only metadata and
+  explicitly requested sample ranges are fetched, with bounded read-ahead.
 - Hugging Face `.../blob/...` file-page links are converted automatically to
   file download locations. Xet-backed files use Hugging Face's reconstruction
   protocol, avoiding Safari's unreliable Range handling on Xet bridge redirects.
@@ -122,10 +133,13 @@ to browse its GGUF, SafeTensors, and ONNX files, paste a model URL, or run
   authentication, so download those files locally and open them from disk.
 - SafeTensors index URLs and standard sharded GGUF URLs resolve sibling shards
   automatically.
-- The ONNX protobuf manifest is downloaded in full with a 50 MiB limit.
-  Referenced external-data layouts are inferred from initializer offsets,
-  lengths, shapes, and dtypes without opening the `.data` files; the byte map
-  shows those physical address spaces rather than the protobuf container.
+- ONNX uses the same ranged HTTP/Hugging Face sources as the other formats,
+  without a separate 50 MiB model-file limit. Referenced external-data layouts
+  are inferred from tensor offsets, lengths, shapes, and dtypes without
+  opening the `.data` files; the byte map
+  shows those physical address spaces alongside embedded tensors in the
+  protobuf container. If an HTTP server ignores Range requests, the existing
+  64 MiB full-download safety limit still applies.
 - For non-Hugging Face URLs, the static web app has no proxy. The origin must allow CORS, expose the
   `Content-Range` response header, and return valid `206 Partial Content`
   responses. A clear error is shown when these requirements are not met.
@@ -174,7 +188,7 @@ pnpm package:vscode
 ```
 
 Pushes to `main` deploy the static app through GitHub Pages. Version tags such
-as `v0.5.2` create a GitHub release containing the VSIX, then dispatch the
+as `v0.5.3` create a GitHub release containing the VSIX, then dispatch the
 Marketplace publishing workflow. A GitHub release published manually triggers
 the same Marketplace workflow.
 
