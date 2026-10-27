@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { MemorySource } from "../src/data-source";
 import { ParseError } from "../src/errors";
 import { OnnxParser } from "../src/parsers/onnx";
+import type { RandomAccessSource } from "../src/types";
 
 interface Encoded {
   bytes: number[];
@@ -15,6 +16,161 @@ interface EncodedBytes {
 }
 
 describe("OnnxParser", () => {
+  it.each([4, 5, 6, 7, 9, 10, 11])(
+    "skips large field %s payloads without counting weights as metadata",
+    async (field) => {
+      const { source, reads, dataOffset, payloadLength } = virtualTensor(field);
+      const parsed = await new OnnxParser().parse(source, { maxMetadataBytes: 128 });
+      expect(parsed.tensors[0]).toMatchObject({
+        name: "large",
+        byteOffset: BigInt(dataOffset),
+        byteLength: BigInt(payloadLength),
+        byteSegments: [{ byteOffset: BigInt(dataOffset), byteLength: BigInt(payloadLength) }]
+      });
+      expect(reads.every((read) => read.length <= 64 * 1024)).toBe(true);
+      expect(reads.reduce((sum, read) => sum + read.length, 0)).toBeLessThan(128 * 1024);
+    }
+  );
+
+  it("preserves offsets beyond 4 GiB without allocating the tensor payload", async () => {
+    const { source, dataOffset, payloadLength } = virtualTensor(9, [7, 5], 2 ** 32 + 128);
+    const parsed = await new OnnxParser().parse(source, { maxMetadataBytes: 128 });
+    expect(parsed.tensors[0]?.byteOffset).toBe(BigInt(dataOffset));
+    expect(parsed.tensors[0]?.byteLength).toBe(BigInt(payloadLength));
+    expect(parsed.tensors[0]?.name).toBe("large");
+  });
+
+  it.each([
+    [7, 1, 5, 5], // Graph -> Node -> Attribute -> Tensor
+    [7, 1, 5, 10], // Repeated tensor attributes
+    [7, 1, 5, 6, 5], // Subgraph initializer
+    [7, 1, 5, 11, 5], // Repeated subgraph attributes
+    [7, 15, 1], // Sparse initializer values
+    [7, 15, 2], // Sparse initializer indices
+    [7, 1, 5, 22, 1], // Sparse tensor attribute
+    [7, 1, 5, 23, 2], // Repeated sparse tensor attributes
+    [25, 7, 5, 5], // Function node
+    [25, 11, 5], // Function default attribute
+    [20, 1, 5], // Training initialization graph
+    [20, 2, 5] // Training algorithm graph
+  ])("finds large tensors in nested path %j", async (...path) => {
+    const { source, dataOffset, payloadLength } = virtualTensor(9, path);
+    const parsed = await new OnnxParser().parse(source, { maxMetadataBytes: 256 });
+    expect(parsed.tensors).toHaveLength(1);
+    expect(parsed.tensors[0]).toMatchObject({
+      name: "large", byteOffset: BigInt(dataOffset), byteLength: BigInt(payloadLength)
+    });
+  });
+
+  it("keeps a metadata budget independent of file size", async () => {
+    const bytes = toUint8Array(stringField(2, "a".repeat(256))).bytes;
+    await expect(new OnnxParser().parse(new MemorySource("metadata.onnx", bytes), {
+      maxMetadataBytes: 128
+    })).rejects.toThrow(/metadata exceeds/);
+    const unknown = toUint8Array(bytesField(99, new Uint8Array(256))).bytes;
+    await expect(new OnnxParser().parse(new MemorySource("unknown.onnx", unknown), {
+      maxMetadataBytes: 128
+    })).rejects.toThrow(/metadata exceeds/);
+  });
+
+  it("counts metadata cumulatively across separate fields", async () => {
+    const bytes = toUint8Array(concat(
+      stringField(2, "a".repeat(80)), stringField(3, "b".repeat(80))
+    )).bytes;
+    await expect(new OnnxParser().parse(new MemorySource("metadata.onnx", bytes), {
+      maxMetadataBytes: 128
+    })).rejects.toThrow(/metadata exceeds/);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])("rejects invalid metadata limit %s", async (limit) => {
+    await expect(new OnnxParser().parse(new MemorySource("empty.onnx", new Uint8Array()), {
+      maxMetadataBytes: limit
+    })).rejects.toThrow(/Invalid ONNX metadata byte limit/);
+  });
+
+  it("honors cancellation before and during reads", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const { source } = virtualTensor(9);
+    await expect(new OnnxParser().parse(source, { signal: controller.signal })).rejects.toThrow(/abort/i);
+    await expect(new OnnxParser().parse(new MemorySource("empty.onnx", new Uint8Array()), {
+      signal: controller.signal
+    })).rejects.toThrow(/abort/i);
+    const during = new AbortController();
+    const abortingSource: RandomAccessSource = {
+      ...source,
+      async read(offset, length) {
+        const bytes = await source.read(offset, length);
+        during.abort();
+        return bytes;
+      }
+    };
+    await expect(new OnnxParser().parse(abortingSource, { signal: during.signal })).rejects.toThrow(/abort/i);
+  });
+
+  it("rejects short random-access reads", async () => {
+    const { source } = virtualTensor(9);
+    await expect(new OnnxParser().parse({
+      ...source, read: async () => new Uint8Array()
+    })).rejects.toThrow(/Truncated ONNX source read/);
+  });
+
+  it("bounds nested graph recursion", async () => {
+    const path = [7, ...Array.from({ length: 12 }, () => [1, 5, 6]).flat(), 5];
+    await expect(new OnnxParser().parse(virtualTensor(9, path).source)).rejects.toThrow(/nesting exceeds/);
+  });
+
+  it("uses distinct physical IDs for tensors in different subgraphs", async () => {
+    const tensor = messageField(5, concat(
+      varintField(1, 1n), varintField(2, 2n), stringField(8, "weight"), bytesField(9, [1])
+    ));
+    const nested = messageField(1, messageField(5, messageField(6, tensor)));
+    const bytes = toUint8Array(messageField(7, concat(tensor, nested, nested))).bytes;
+    const parsed = await new OnnxParser().parse(new MemorySource("nested.onnx", bytes));
+    expect(parsed.tensors).toHaveLength(3);
+    expect(new Set(parsed.tensors.map((tensor) => tensor.id)).size).toBe(3);
+  });
+
+  it.each([
+    { field: 4, wire: 5, dtype: 1, values: [0, 0, 0x80, 0x3f] },
+    { field: 10, wire: 1, dtype: 11, values: [0, 0, 0, 0, 0, 0, 0xf0, 0x3f] },
+    { field: 5, wire: 0, dtype: 2, values: [0xff, 0x01] },
+    { field: 7, wire: 0, dtype: 7, values: [0xff, 0x01] },
+    { field: 11, wire: 0, dtype: 13, values: [0xff, 0x01] }
+  ])("maps unpacked typed data field $field", async ({ field, wire, dtype, values }) => {
+    const value = { bytes: [...encodeVarint((field << 3) | wire), ...values], marks: { value: 1 } };
+    const bytes = toUint8Array(messageField(7, messageField(5, concat(
+      varintField(1, 1n), varintField(2, BigInt(dtype)), value
+    ))));
+    const parsed = await new OnnxParser().parse(new MemorySource("unpacked.onnx", bytes.bytes));
+    expect(parsed.tensors[0]?.byteSegments).toEqual([{
+      byteOffset: BigInt(requireMark(bytes.marks, "value")), byteLength: BigInt(values.length)
+    }]);
+  });
+
+  it.each([
+    [0],
+    [0x80],
+    [...Array<number>(9).fill(0xff), 2],
+    [...encodeVarint(1n << 32n), 0],
+    [0x0b],
+    [0x3a, 2, 0x2a, 127],
+    [0x3a, 3, 0x2a, 1, 0x25],
+    [0x3a, 5, 0x2a, 3, 0x22, 1, 0],
+    [0x3a, 5, 0x2a, 3, 0x52, 1, 0]
+  ])("rejects malformed protobuf bytes %j", async (...encoded) => {
+    await expect(new OnnxParser().parse(new MemorySource(
+      "bad.onnx", Uint8Array.from(encoded)
+    ))).rejects.toBeInstanceOf(ParseError);
+  });
+
+  it.each(["-1", "abc", "1.5", ""])("rejects malformed external byte ranges %j", async (value) => {
+    const bytes = toUint8Array(messageField(7, messageField(5,
+      messageField(13, stringStringEntry("offset", value))
+    ))).bytes;
+    await expect(new OnnxParser().parse(new MemorySource("bad.onnx", bytes))).rejects.toThrow(/external data byte range/);
+  });
+
   it("parses inline raw_data initializer metadata and file offsets", async () => {
     const rawData = [1, 2, 3, 4, 5, 6];
     const tensor = messageField(
@@ -97,6 +253,48 @@ describe("OnnxParser", () => {
       }
     });
   });
+
+  function virtualTensor(field: number, path = [7, 5], payloadLength = 128 * 1024 * 1024): {
+    source: RandomAccessSource;
+    reads: Array<{ offset: number; length: number }>;
+    dataOffset: number;
+    payloadLength: number;
+  } {
+    const dtype = ({ 4: 1, 5: 2, 6: 8, 7: 7, 9: 2, 10: 11, 11: 13 } as Record<number, number>)[field]!;
+    const elements = field === 4 ? payloadLength / 4 : field === 10 ? payloadLength / 8 : field === 6 ? 1 : payloadLength;
+    const suffix = toUint8Array(concat(
+      varintField(1, BigInt(elements)),
+      varintField(2, BigInt(dtype)),
+      stringField(8, "large")
+    )).bytes;
+    let prefix = [...encodeVarint((field << 3) | 2), ...encodeVarint(payloadLength)];
+    for (const wrapper of [...path].reverse()) {
+      const length = prefix.length + payloadLength + suffix.length;
+      prefix = [...encodeVarint((wrapper << 3) | 2), ...encodeVarint(length), ...prefix];
+    }
+    const size = prefix.length + payloadLength + suffix.length;
+    const reads: Array<{ offset: number; length: number }> = [];
+    return {
+      source: {
+        id: "virtual", name: "large.onnx", size: BigInt(size),
+        async read(offset, length) {
+          const start = Number(offset);
+          if (start < 0 || start + length > size) throw new Error("Read exceeds virtual source");
+          reads.push({ offset: start, length });
+          const result = new Uint8Array(length);
+          for (let index = 0; index < length; index++) {
+            const position = start + index;
+            if (position < prefix.length) result[index] = prefix[position]!;
+            else if (position >= prefix.length + payloadLength) {
+              result[index] = suffix[position - prefix.length - payloadLength]!;
+            }
+          }
+          return result;
+        }
+      },
+      reads, dataOffset: prefix.length, payloadLength
+    };
+  }
 
   it("parses external_data metadata without reading external tensor bytes", async () => {
     const externalTensor = messageField(

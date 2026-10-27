@@ -111,20 +111,11 @@ export class OnnxParser implements Parser {
   readonly format = "onnx" as const;
 
   async parse(source: RandomAccessSource, options: ParseOptions = {}): Promise<ParsedFile> {
+    options.signal?.throwIfAborted();
     const maxMetadataBytes = resolveOnnxMetadataLimit(options.maxMetadataBytes);
-    if (source.size > BigInt(maxMetadataBytes)) {
-      throw new ParseError(`ONNX metadata exceeds the ${maxMetadataBytes} byte limit`);
-    }
-
+    const reader = new OnnxReader(source, maxMetadataBytes, options.signal);
+    const parsed = await parseModelProto(reader, source.id);
     options.signal?.throwIfAborted();
-    const bytes = await source.read(
-      0n,
-      bigintToSafeNumber(source.size, "ONNX file size"),
-      options.signal
-    );
-    options.signal?.throwIfAborted();
-
-    const parsed = parseModelProto(bytes, source.id);
     return {
       id: source.id,
       name: source.name,
@@ -134,6 +125,57 @@ export class OnnxParser implements Parser {
       tensors: parsed.tensors,
       diagnostics: []
     };
+  }
+}
+
+// Cache bounded windows, not the protobuf container: tensor payloads may be gigabytes.
+class OnnxReader {
+  readonly byteLength: number;
+  private cache: Uint8Array = new Uint8Array();
+  private cacheStart = 0;
+  private metadataBytes = 0;
+
+  constructor(
+    private readonly source: RandomAccessSource,
+    private readonly limit: number,
+    private readonly signal?: AbortSignal
+  ) {
+    this.byteLength = bigintToSafeNumber(source.size, "ONNX file size");
+  }
+
+  charge(length: number): void {
+    this.signal?.throwIfAborted();
+    this.metadataBytes += length;
+    if (this.metadataBytes > this.limit) {
+      throw new ParseError(`ONNX metadata exceeds the ${this.limit} byte limit`);
+    }
+  }
+
+  async byte(offset: number): Promise<number> {
+    this.signal?.throwIfAborted();
+    if (offset < this.cacheStart || offset >= this.cacheStart + this.cache.length) {
+      this.cacheStart = offset;
+      const length = Math.min(64 * 1024, this.byteLength - offset);
+      this.cache = await this.source.read(BigInt(offset), length, this.signal);
+      if (this.cache.length !== length) {
+        throw new ParseError("Truncated ONNX source read", BigInt(offset));
+      }
+    }
+    this.signal?.throwIfAborted();
+    return this.cache[offset - this.cacheStart]!;
+  }
+
+  async string(start: number, end: number): Promise<string> {
+    this.charge(end - start);
+    const bytes = new Uint8Array(end - start);
+    let offset = start;
+    while (offset < end) {
+      await this.byte(offset);
+      const length = Math.min(end - offset, this.cacheStart + this.cache.length - offset);
+      bytes.set(this.cache.subarray(offset - this.cacheStart, offset - this.cacheStart + length), offset - start);
+      offset += length;
+    }
+    return decoder.decode(bytes);
   }
 }
 
@@ -160,7 +202,7 @@ function buildFileMetadata(parsed: ParsedOnnxModel): Record<string, unknown> {
   return metadata;
 }
 
-function parseModelProto(bytes: Uint8Array, fileId: string): ParsedOnnxModel {
+async function parseModelProto(bytes: OnnxReader, fileId: string): Promise<ParsedOnnxModel> {
   let offset = 0;
   const model: ParsedOnnxModel = {
     initializerMetadata: [],
@@ -168,7 +210,7 @@ function parseModelProto(bytes: Uint8Array, fileId: string): ParsedOnnxModel {
   };
 
   while (offset < bytes.byteLength) {
-    const tag = readVarint(bytes, offset, bytes.byteLength);
+    const tag = await readVarint(bytes, offset, bytes.byteLength);
     offset = tag.next;
     const fieldNumber = Number(tag.value >> 3n);
     const wireType = Number(tag.value & 0x7n);
@@ -177,58 +219,69 @@ function parseModelProto(bytes: Uint8Array, fileId: string): ParsedOnnxModel {
     switch (fieldNumber) {
       case 1: {
         expectWireType(wireType, 0, offset);
-        const value = readVarint(bytes, offset, bytes.byteLength);
+        const value = await readVarint(bytes, offset, bytes.byteLength);
         model.irVersion = asSignedInt64(value.value);
         offset = value.next;
         break;
       }
       case 2: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, bytes.byteLength);
-        model.producerName = decodeUtf8(bytes, range.valueStart, range.valueEnd);
+        const range = await readLengthDelimitedRange(bytes, offset, bytes.byteLength);
+        model.producerName = await bytes.string(range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
       case 3: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, bytes.byteLength);
-        model.producerVersion = decodeUtf8(bytes, range.valueStart, range.valueEnd);
+        const range = await readLengthDelimitedRange(bytes, offset, bytes.byteLength);
+        model.producerVersion = await bytes.string(range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
       case 4: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, bytes.byteLength);
-        model.domain = decodeUtf8(bytes, range.valueStart, range.valueEnd);
+        const range = await readLengthDelimitedRange(bytes, offset, bytes.byteLength);
+        model.domain = await bytes.string(range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
       case 5: {
         expectWireType(wireType, 0, offset);
-        const value = readVarint(bytes, offset, bytes.byteLength);
+        const value = await readVarint(bytes, offset, bytes.byteLength);
         model.modelVersion = asSignedInt64(value.value);
         offset = value.next;
         break;
       }
       case 6: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, bytes.byteLength);
-        model.docString = decodeUtf8(bytes, range.valueStart, range.valueEnd);
+        const range = await readLengthDelimitedRange(bytes, offset, bytes.byteLength);
+        model.docString = await bytes.string(range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
       case 7: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, bytes.byteLength);
-        const graph = parseGraphProto(bytes, range.valueStart, range.valueEnd, fileId, 1);
+        const range = await readLengthDelimitedRange(bytes, offset, bytes.byteLength);
+        const graph = await parseGraphProto(bytes, range.valueStart, range.valueEnd, fileId, 1);
         if (graph.graphName !== undefined) model.graphName = graph.graphName;
-        model.initializerMetadata = graph.initializerMetadata;
-        model.tensors = graph.tensors;
+        for (const metadata of graph.initializerMetadata) model.initializerMetadata.push(metadata);
+        for (const tensor of graph.tensors) model.tensors.push(tensor);
+        offset = range.next;
+        break;
+      }
+      case 20:
+      case 25: {
+        expectWireType(wireType, 2, offset);
+        const range = await readLengthDelimitedRange(bytes, offset, bytes.byteLength);
+        await parseTensorContainers(
+          bytes, range.valueStart, range.valueEnd, fileId, 1,
+          fieldNumber === 20 ? "training" : "function", model.tensors
+        );
         offset = range.next;
         break;
       }
       default:
-        offset = skipField(bytes, offset, bytes.byteLength, wireType);
+        offset = await skipField(bytes, offset, bytes.byteLength, wireType);
         break;
     }
   }
@@ -236,48 +289,57 @@ function parseModelProto(bytes: Uint8Array, fileId: string): ParsedOnnxModel {
   return model;
 }
 
-function parseGraphProto(
-  bytes: Uint8Array,
+async function parseGraphProto(
+  bytes: OnnxReader,
   start: number,
   end: number,
   fileId: string,
   depth: number
-): {
+): Promise<{
   graphName?: string;
   initializerMetadata: OnnxInitializerMetadata[];
   tensors: TensorRecord[];
-} {
+}> {
   ensureDepth(depth, start);
   let offset = start;
   let graphName: string | undefined;
   const initializerMetadata: OnnxInitializerMetadata[] = [];
   const tensors: TensorRecord[] = [];
-  let tensorIndex = 0;
 
   while (offset < end) {
-    const tag = readVarint(bytes, offset, end);
+    const tag = await readVarint(bytes, offset, end);
     offset = tag.next;
     const fieldNumber = Number(tag.value >> 3n);
     const wireType = Number(tag.value & 0x7n);
     ensureTag(fieldNumber, wireType, offset);
 
     switch (fieldNumber) {
+      case 1:
+      case 15: {
+        expectWireType(wireType, 2, offset);
+        const range = await readLengthDelimitedRange(bytes, offset, end);
+        await parseTensorContainers(
+          bytes, range.valueStart, range.valueEnd, fileId, depth + 1,
+          fieldNumber === 1 ? "node" : "sparse", tensors
+        );
+        offset = range.next;
+        break;
+      }
       case 2: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, end);
-        graphName = decodeUtf8(bytes, range.valueStart, range.valueEnd);
+        const range = await readLengthDelimitedRange(bytes, offset, end);
+        graphName = await bytes.string(range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
       case 5: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, end);
-        const parsedTensor = parseTensorProto(
+        const range = await readLengthDelimitedRange(bytes, offset, end);
+        const parsedTensor = await parseTensorProto(
           bytes,
           range.valueStart,
           range.valueEnd,
           fileId,
-          tensorIndex++,
           depth + 1
         );
         initializerMetadata.push(parsedTensor.metadata);
@@ -286,7 +348,7 @@ function parseGraphProto(
         break;
       }
       default:
-        offset = skipField(bytes, offset, end, wireType);
+        offset = await skipField(bytes, offset, end, wireType);
         break;
     }
   }
@@ -303,17 +365,63 @@ function parseGraphProto(
   return result;
 }
 
-function parseTensorProto(
-  bytes: Uint8Array,
+type TensorContainer = "node" | "attribute" | "sparse" | "function" | "training";
+
+const TENSOR_CONTAINERS: Record<TensorContainer, Readonly<Record<number, TensorContainer | "tensor" | "graph">>> = {
+  node: { 5: "attribute" },
+  attribute: { 5: "tensor", 6: "graph", 10: "tensor", 11: "graph", 22: "sparse", 23: "sparse" },
+  sparse: { 1: "tensor", 2: "tensor" },
+  function: { 7: "node", 11: "attribute" },
+  training: { 1: "graph", 2: "graph" }
+};
+
+async function parseTensorContainers(
+  bytes: OnnxReader,
   start: number,
   end: number,
   fileId: string,
-  tensorIndex: number,
+  depth: number,
+  kind: TensorContainer,
+  tensors: TensorRecord[]
+): Promise<void> {
+  ensureDepth(depth, start);
+  let offset = start;
+  while (offset < end) {
+    const tag = await readVarint(bytes, offset, end);
+    offset = tag.next;
+    const fieldNumber = Number(tag.value >> 3n);
+    const wireType = Number(tag.value & 7n);
+    ensureTag(fieldNumber, wireType, offset);
+    const child = TENSOR_CONTAINERS[kind][fieldNumber];
+    if (!child) {
+      offset = await skipField(bytes, offset, end, wireType);
+      continue;
+    }
+    expectWireType(wireType, 2, offset);
+    const range = await readLengthDelimitedRange(bytes, offset, end);
+    if (child === "tensor") {
+      const parsed = await parseTensorProto(bytes, range.valueStart, range.valueEnd, fileId, depth + 1);
+      tensors.push(parsed.tensor);
+    } else if (child === "graph") {
+      const parsed = await parseGraphProto(bytes, range.valueStart, range.valueEnd, fileId, depth + 1);
+      for (const tensor of parsed.tensors) tensors.push(tensor);
+    } else {
+      await parseTensorContainers(bytes, range.valueStart, range.valueEnd, fileId, depth + 1, child, tensors);
+    }
+    offset = range.next;
+  }
+}
+
+async function parseTensorProto(
+  bytes: OnnxReader,
+  start: number,
+  end: number,
+  fileId: string,
   depth: number
-): {
+): Promise<{
   metadata: OnnxInitializerMetadata;
   tensor: TensorRecord;
-} {
+}> {
   ensureDepth(depth, start);
   let offset = start;
 
@@ -335,7 +443,7 @@ function parseTensorProto(
   };
 
   while (offset < end) {
-    const tag = readVarint(bytes, offset, end);
+    const tag = await readVarint(bytes, offset, end);
     offset = tag.next;
     const fieldNumber = Number(tag.value >> 3n);
     const wireType = Number(tag.value & 0x7n);
@@ -344,14 +452,14 @@ function parseTensorProto(
     switch (fieldNumber) {
       case 1:
         if (wireType === 0) {
-          const value = readVarint(bytes, offset, end);
+          const value = await readVarint(bytes, offset, end);
           dims.push(asSignedInt64(value.value));
           offset = value.next;
         } else if (wireType === 2) {
-          const range = readLengthDelimitedRange(bytes, offset, end);
+          const range = await readLengthDelimitedRange(bytes, offset, end);
           let packedOffset = range.valueStart;
           while (packedOffset < range.valueEnd) {
-            const value = readVarint(bytes, packedOffset, range.valueEnd);
+            const value = await readVarint(bytes, packedOffset, range.valueEnd);
             dims.push(asSignedInt64(value.value));
             packedOffset = value.next;
           }
@@ -362,7 +470,7 @@ function parseTensorProto(
         break;
       case 2: {
         expectWireType(wireType, 0, offset);
-        const value = readVarint(bytes, offset, end);
+        const value = await readVarint(bytes, offset, end);
         dataType = Number(value.value);
         offset = value.next;
         break;
@@ -372,7 +480,10 @@ function parseTensorProto(
       case 6:
       case 7: {
         if (wireType === 2) {
-          const range = readLengthDelimitedRange(bytes, offset, end);
+          const range = await readLengthDelimitedRange(bytes, offset, end);
+          if (fieldNumber === 4 && (range.valueEnd - range.valueStart) % 4 !== 0) {
+            throw new ParseError("Packed float_data length must be a multiple of 4", BigInt(offset));
+          }
           markTypedData(range.valueStart, range.valueEnd);
           if (fieldNumber === 5) {
             int32DataRanges.push({ start: range.valueStart, end: range.valueEnd });
@@ -380,7 +491,7 @@ function parseTensorProto(
           offset = range.next;
         } else if (wireType === 0 && (fieldNumber === 5 || fieldNumber === 7)) {
           const valueStart = offset;
-          const value = readVarint(bytes, offset, end);
+          const value = await readVarint(bytes, offset, end, false);
           markTypedData(valueStart, value.next);
           if (fieldNumber === 5) {
             int32DataRanges.push({ start: valueStart, end: value.next });
@@ -388,7 +499,8 @@ function parseTensorProto(
           offset = value.next;
         } else if (wireType === 5 && fieldNumber === 4) {
           markTypedData(offset, offset + 4);
-          offset = skipField(bytes, offset, end, wireType);
+          ensureFixedWidth(offset, end, 4);
+          offset += 4;
         } else {
           throw new ParseError(
             `Unexpected wire type ${wireType} for TensorProto typed data`,
@@ -399,14 +511,14 @@ function parseTensorProto(
       }
       case 8: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, end);
-        name = decodeUtf8(bytes, range.valueStart, range.valueEnd);
+        const range = await readLengthDelimitedRange(bytes, offset, end);
+        name = await bytes.string(range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
       case 9: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, end);
+        const range = await readLengthDelimitedRange(bytes, offset, end);
         rawDataOffset = BigInt(range.valueStart);
         rawDataLength = BigInt(range.valueEnd - range.valueStart);
         offset = range.next;
@@ -415,15 +527,19 @@ function parseTensorProto(
       case 10:
       case 11: {
         if (wireType === 2) {
-          const range = readLengthDelimitedRange(bytes, offset, end);
+          const range = await readLengthDelimitedRange(bytes, offset, end);
+          if (fieldNumber === 10 && (range.valueEnd - range.valueStart) % 8 !== 0) {
+            throw new ParseError("Packed double_data length must be a multiple of 8", BigInt(offset));
+          }
           markTypedData(range.valueStart, range.valueEnd);
           offset = range.next;
         } else if (wireType === 1 && fieldNumber === 10) {
           markTypedData(offset, offset + 8);
-          offset = skipField(bytes, offset, end, wireType);
+          ensureFixedWidth(offset, end, 8);
+          offset += 8;
         } else if (wireType === 0 && fieldNumber === 11) {
           const valueStart = offset;
-          const value = readVarint(bytes, offset, end);
+          const value = await readVarint(bytes, offset, end, false);
           markTypedData(valueStart, value.next);
           offset = value.next;
         } else {
@@ -436,20 +552,20 @@ function parseTensorProto(
       }
       case 13: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, end);
-        mergeExternalData(externalData, parseStringStringEntry(bytes, range.valueStart, range.valueEnd, depth + 1));
+        const range = await readLengthDelimitedRange(bytes, offset, end);
+        mergeExternalData(externalData, await parseStringStringEntry(bytes, range.valueStart, range.valueEnd, depth + 1));
         offset = range.next;
         break;
       }
       case 14: {
         expectWireType(wireType, 0, offset);
-        const value = readVarint(bytes, offset, end);
+        const value = await readVarint(bytes, offset, end);
         dataLocation = Number(value.value);
         offset = value.next;
         break;
       }
       default:
-        offset = skipField(bytes, offset, end, wireType);
+        offset = await skipField(bytes, offset, end, wireType);
         break;
     }
   }
@@ -462,7 +578,7 @@ function parseTensorProto(
   const dataTypeName = ONNX_DATA_TYPE_NAMES[dataType] ?? `UNKNOWN(${dataType})`;
   const float6 = dataType === 27 || dataType === 28;
   if (float6 && !inferredExternal) {
-    validateFloat6Data(bytes, dims, rawDataOffset, rawDataLength, int32DataRanges);
+    await validateFloat6Data(bytes, dims, rawDataOffset, rawDataLength, int32DataRanges);
   }
   const dataLocationName =
     ONNX_DATA_LOCATION_NAMES[dataLocation] ?? (inferredExternal ? "EXTERNAL" : `UNKNOWN(${dataLocation})`);
@@ -485,7 +601,7 @@ function parseTensorProto(
         : 0n;
 
   const tensor: TensorRecord = {
-    id: `${fileId}:initializer:${tensorIndex}`,
+    id: `${fileId}:tensor:${start}`,
     name,
     fileId,
     dtype: dataTypeName,
@@ -542,13 +658,13 @@ function parseTensorProto(
   };
 }
 
-function validateFloat6Data(
-  bytes: Uint8Array,
+async function validateFloat6Data(
+  bytes: OnnxReader,
   dims: bigint[],
   rawOffset: bigint | undefined,
   rawLength: bigint,
   int32Ranges: Array<{ start: number; end: number }>
-): void {
+): Promise<void> {
   if (dims.some((dimension) => dimension < 0n)) {
     throw new ParseError("ONNX FLOAT6 dimensions must be non-negative");
   }
@@ -560,7 +676,7 @@ function validateFloat6Data(
     }
     const usedBits = Number((elements * 6n) % 8n);
     if (usedBits !== 0) {
-      const lastByte = bytes[Number(rawOffset + rawLength - 1n)]!;
+      const lastByte = await bytes.byte(Number(rawOffset + rawLength - 1n));
       if ((lastByte >> usedBits) !== 0) {
         throw new ParseError("ONNX FLOAT6 raw_data has non-zero padding bits");
       }
@@ -571,7 +687,7 @@ function validateFloat6Data(
   for (const range of int32Ranges) {
     let offset = range.start;
     while (offset < range.end) {
-      const value = readVarint(bytes, offset, range.end);
+      const value = await readVarint(bytes, offset, range.end, false);
       if (value.value > 63n) {
         throw new ParseError("ONNX FLOAT6 int32_data must contain unsigned 6-bit codes (0–63)", BigInt(offset));
       }
@@ -584,19 +700,19 @@ function validateFloat6Data(
   }
 }
 
-function parseStringStringEntry(
-  bytes: Uint8Array,
+async function parseStringStringEntry(
+  bytes: OnnxReader,
   start: number,
   end: number,
   depth: number
-): Partial<Record<keyof OnnxExternalData, string | bigint>> {
+): Promise<Partial<Record<keyof OnnxExternalData, string | bigint>>> {
   ensureDepth(depth, start);
   let offset = start;
   let key = "";
   let value = "";
 
   while (offset < end) {
-    const tag = readVarint(bytes, offset, end);
+    const tag = await readVarint(bytes, offset, end);
     offset = tag.next;
     const fieldNumber = Number(tag.value >> 3n);
     const wireType = Number(tag.value & 0x7n);
@@ -605,20 +721,20 @@ function parseStringStringEntry(
     switch (fieldNumber) {
       case 1: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, end);
-        key = decodeUtf8(bytes, range.valueStart, range.valueEnd);
+        const range = await readLengthDelimitedRange(bytes, offset, end);
+        key = await bytes.string(range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
       case 2: {
         expectWireType(wireType, 2, offset);
-        const range = readLengthDelimitedRange(bytes, offset, end);
-        value = decodeUtf8(bytes, range.valueStart, range.valueEnd);
+        const range = await readLengthDelimitedRange(bytes, offset, end);
+        value = await bytes.string(range.valueStart, range.valueEnd);
         offset = range.next;
         break;
       }
       default:
-        offset = skipField(bytes, offset, end, wireType);
+        offset = await skipField(bytes, offset, end, wireType);
         break;
     }
   }
@@ -628,11 +744,11 @@ function parseStringStringEntry(
       return { location: value };
     case "offset": {
       const offsetValue = parseDecimalBigInt(value);
-      return offsetValue === undefined ? {} : { offset: offsetValue };
+      return { offset: offsetValue };
     }
     case "length": {
       const lengthValue = parseDecimalBigInt(value);
-      return lengthValue === undefined ? {} : { length: lengthValue };
+      return { length: lengthValue };
     }
     case "checksum":
       return { checksum: value };
@@ -654,16 +770,12 @@ function mergeExternalData(
   if (typeof update.basepath === "string") target.basepath = update.basepath;
 }
 
-function parseDecimalBigInt(value: string): bigint | undefined {
-  if (!/^\d+$/.test(value)) return undefined;
+function parseDecimalBigInt(value: string): bigint {
+  if (!/^\d+$/.test(value)) throw new ParseError(`Invalid ONNX external data byte range: ${value}`);
   return BigInt(value);
 }
 
-function decodeUtf8(bytes: Uint8Array, start: number, end: number): string {
-  return decoder.decode(bytes.subarray(start, end));
-}
-
-function readVarint(bytes: Uint8Array, start: number, end: number): ReadVarintResult {
+async function readVarint(bytes: OnnxReader, start: number, end: number, metadata = true): Promise<ReadVarintResult> {
   let value = 0n;
   let shift = 0n;
   let offset = start;
@@ -672,10 +784,8 @@ function readVarint(bytes: Uint8Array, start: number, end: number): ReadVarintRe
     if (offset >= end) {
       throw new ParseError("Truncated protobuf varint", BigInt(start));
     }
-    const byte = bytes[offset++];
-    if (byte === undefined) {
-      throw new ParseError("Unexpected end of protobuf varint", BigInt(offset));
-    }
+    const byte = await bytes.byte(offset++);
+    if (metadata) bytes.charge(1);
     if (index === 9 && byte > 1) {
       throw new ParseError("Protobuf varint exceeds 64 bits", BigInt(start));
     }
@@ -689,12 +799,12 @@ function readVarint(bytes: Uint8Array, start: number, end: number): ReadVarintRe
   throw new ParseError("Protobuf varint exceeds 10 bytes", BigInt(start));
 }
 
-function readLengthDelimitedRange(
-  bytes: Uint8Array,
+async function readLengthDelimitedRange(
+  bytes: OnnxReader,
   start: number,
   end: number
-): LengthDelimitedRange {
-  const length = readVarint(bytes, start, end);
+): Promise<LengthDelimitedRange> {
+  const length = await readVarint(bytes, start, end);
   const remaining = end - length.next;
   if (length.value > BigInt(remaining)) {
     throw new ParseError(
@@ -713,17 +823,22 @@ function readLengthDelimitedRange(
   };
 }
 
-function skipField(bytes: Uint8Array, start: number, end: number, wireType: number): number {
+async function skipField(bytes: OnnxReader, start: number, end: number, wireType: number): Promise<number> {
   switch (wireType) {
     case 0:
-      return readVarint(bytes, start, end).next;
+      return (await readVarint(bytes, start, end)).next;
     case 1:
       ensureFixedWidth(start, end, 8);
+      bytes.charge(8);
       return start + 8;
-    case 2:
-      return readLengthDelimitedRange(bytes, start, end).next;
+    case 2: {
+      const range = await readLengthDelimitedRange(bytes, start, end);
+      bytes.charge(range.valueEnd - range.valueStart);
+      return range.next;
+    }
     case 5:
       ensureFixedWidth(start, end, 4);
+      bytes.charge(4);
       return start + 4;
     default:
       throw new ParseError(`Unsupported protobuf wire type ${wireType}`, BigInt(start));
@@ -737,7 +852,7 @@ function ensureFixedWidth(start: number, end: number, width: number): void {
 }
 
 function ensureTag(fieldNumber: number, wireType: number, offset: number): void {
-  if (!Number.isSafeInteger(fieldNumber) || fieldNumber <= 0) {
+  if (!Number.isSafeInteger(fieldNumber) || fieldNumber <= 0 || fieldNumber > 0x1fffffff) {
     throw new ParseError(`Invalid protobuf field number ${fieldNumber}`, BigInt(offset));
   }
   if (![0, 1, 2, 5].includes(wireType)) {
