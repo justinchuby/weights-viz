@@ -9,6 +9,7 @@ import {
   chooseBytesPerCell,
   clampAddressMapZoom,
   createAddressMapLayout,
+  fileAddressGaps,
   hitTestAddressMap,
   isClickGesture
 } from "./address-map";
@@ -177,6 +178,69 @@ describe("address map", () => {
         file.gridWidth;
     const y = file.gridY + (Number(row) + 0.5) * file.rowHeight;
     expect(hitTestAddressMap(layout, x, y)?.kind).toBe("filtered");
+  });
+
+  it("indexes internal and trailing gaps without indexing the header", () => {
+    const model = makeModel(100n, [
+      makeTensor("first", 10n, 10n), makeTensor("second", 40n, 20n)
+    ]);
+    expect(fileAddressGaps(model.files[0]!)).toEqual([
+      { fileId: "file", start: 20n, end: 40n },
+      { fileId: "file", start: 60n, end: 100n }
+    ]);
+    const normal = createAddressMapLayout(model, 1132);
+    const search = createAddressMapLayout(model, 1132, () => false, 0, undefined, true);
+    expect(normal.files[0]?.spans.filter((span) => span.kind === "gap").every((span) => !span.visible)).toBe(true);
+    expect(search.files[0]?.spans.filter((span) => span.kind === "gap").every((span) => span.visible)).toBe(true);
+    expect(fileAddressGaps(model.files[0]!)).toEqual(search.files[0]?.spans.flatMap((span) => span.gap ? [span.gap] : []));
+  });
+
+  it("never turns filtered tensors or touching ranges into gaps", () => {
+    const model = makeModel(100n, [makeTensor("first", 0n, 40n), makeTensor("second", 40n, 60n)]);
+    const layout = createAddressMapLayout(model, 1132, () => false, 0, undefined, true);
+    expect(fileAddressGaps(model.files[0]!)).toEqual([]);
+    expect(layout.files[0]?.spans.some((span) => span.kind === "gap")).toBe(false);
+  });
+
+  it("uses the union of overlapping tensors for gap ranges and hit testing", () => {
+    const model = makeModel(100n, [
+      makeTensor("outer", 10n, 70n),
+      makeTensor("inner", 20n, 10n),
+      makeTensor("later", 50n, 10n)
+    ]);
+    expect(fileAddressGaps(model.files[0]!)).toEqual([{ fileId: "file", start: 80n, end: 100n }]);
+    const layout = createAddressMapLayout(model, 1132);
+    const file = layout.files[0]!;
+    const hit = hitTestAddressMap(
+      layout, file.gridX + (35.25 / Number(file.bytesPerRow)) * file.gridWidth,
+      file.gridY + file.rowHeight / 2
+    );
+    expect(hit).toMatchObject({ kind: "tensor", tensor: { name: "outer" } });
+  });
+
+  it("finds gaps between payload segments, not inside their combined byte length", () => {
+    const tensor = {
+      ...makeTensor("split", 10n, 20n),
+      byteSegments: [
+        { byteOffset: 10n, byteLength: 10n },
+        { byteOffset: 40n, byteLength: 10n }
+      ]
+    };
+    expect(fileAddressGaps(makeFile("file", 64n, [tensor]))).toEqual([
+      { fileId: "file", start: 20n, end: 40n },
+      { fileId: "file", start: 50n, end: 64n }
+    ]);
+  });
+
+  it("clips gaps to actual file bounds and ignores empty payload segments", () => {
+    expect(fileAddressGaps(makeFile("file", 50n, [
+      makeTensor("clipped-start", -10n, 20n), makeTensor("clipped-end", 30n, 100n),
+      makeTensor("empty", 20n, 0n)
+    ]))).toEqual([{ fileId: "file", start: 10n, end: 30n }]);
+    expect(fileAddressGaps(makeFile("empty", 0n, []))).toEqual([]);
+    expect(fileAddressGaps(makeFile("unmapped", 50n, []))).toEqual([
+      { fileId: "unmapped", start: 0n, end: 50n }
+    ]);
   });
 
   it("distinguishes clicks from drags at four pixels", () => {

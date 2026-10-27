@@ -12,6 +12,9 @@ Code.
 - View a Canvas byte map ordered by exact file address, with visible alignment
   gaps and drag-to-pan navigation.
 - Inspect tensor names, shapes, dtypes, exact offsets, lengths, and storage.
+- Search `gap` or `bubble` in the map filter to highlight and navigate
+  unreferenced byte ranges, including in comparison views. Select a gap to
+  inspect its file, exact addresses, and size.
 - Open the **Dtype Atlas** or click a dtype label to learn its bit fields,
   packing, quantization blocks, scale selection, inference path, and kernel
   optimizations without loading a separate reference model.

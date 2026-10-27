@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Search `gap` / `bubble` (including plurals) to find, highlight, and navigate
+  unreferenced byte ranges in single-model and comparison views, with exact
+  file/range details. Normal tensor name and dtype searches are preserved.
+
 ## 0.5.3
 
 - Load large ONNX models using bounded random-access reads instead of treating

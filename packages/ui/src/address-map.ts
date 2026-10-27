@@ -25,10 +25,17 @@ export interface AddressRect {
 export interface AddressSpan {
   start: bigint;
   end: bigint;
-  kind: "metadata" | "tensor";
+  kind: "metadata" | "tensor" | "gap";
   visible: boolean;
   tensor?: TensorRecord;
+  gap?: AddressGap;
   rects: AddressRect[];
+}
+
+export interface AddressGap {
+  fileId: string;
+  start: bigint;
+  end: bigint;
 }
 
 export interface AddressFileLayout {
@@ -68,7 +75,8 @@ export function createAddressMapLayout(
   width: number,
   includeTensor: (tensor: TensorRecord) => boolean = () => true,
   resolutionStep = 0,
-  referenceFileSize?: bigint
+  referenceFileSize?: bigint,
+  highlightGaps = false
 ): AddressMapLayout {
   const columns =
     width < 700 ? NARROW_ADDRESS_GRID_COLUMNS : ADDRESS_GRID_COLUMNS;
@@ -107,7 +115,7 @@ export function createAddressMapLayout(
       spans: []
     };
 
-    layout.spans = createFileSpans(layout, includeTensor);
+    layout.spans = createFileSpans(layout, includeTensor, highlightGaps);
     files.push(layout);
     y = gridY + rowCount * rowHeight + FILE_GAP;
   }
@@ -207,9 +215,13 @@ export function hitTestAddressMap(
     bytesPerCell: fileLayout.bytesPerCell
   };
 
-  const spanIndex = findSpanIndexAtOrBefore(fileLayout.spans, address);
-  const span = spanIndex >= 0 ? fileLayout.spans[spanIndex] : undefined;
-  if (span?.tensor && address < span.end) {
+  let spanIndex = findSpanIndexAtOrBefore(fileLayout.spans, address);
+  let span = fileLayout.spans[spanIndex];
+  while (span && address >= span.end) {
+    span = fileLayout.spans[--spanIndex];
+  }
+  if (!span) return undefined;
+  if (span.tensor) {
     return {
       file: fileLayout.file,
       address,
@@ -221,7 +233,7 @@ export function hitTestAddressMap(
     };
   }
 
-  if (span?.kind === "metadata" && address < span.end) {
+  if (span.kind === "metadata") {
     return {
       file: fileLayout.file,
       address,
@@ -232,14 +244,12 @@ export function hitTestAddressMap(
     };
   }
 
-  const previous = spanIndex >= 0 ? fileLayout.spans[spanIndex] : undefined;
-  const next = fileLayout.spans[spanIndex + 1];
   return {
     file: fileLayout.file,
     address,
     ...cell,
-    start: previous?.end ?? 0n,
-    end: next?.start ?? fileLayout.file.size,
+    start: span.start,
+    end: span.end,
     kind: "unmapped"
   };
 }
@@ -255,42 +265,68 @@ export function isClickGesture(
 
 function createFileSpans(
   layout: AddressFileLayout,
-  includeTensor: (tensor: TensorRecord) => boolean
+  includeTensor: (tensor: TensorRecord) => boolean,
+  highlightGaps: boolean
 ): AddressSpan[] {
-  const allTensors = layout.file.tensors.flatMap((tensor) =>
+  return createFileRanges(layout.file).map((range) => ({
+    ...range,
+    visible: range.tensor ? includeTensor(range.tensor) : range.kind !== "gap" || highlightGaps,
+    rects: projectRange(layout, range.start, range.end)
+  }));
+}
+
+export function fileAddressGaps(file: ParsedFile): AddressGap[] {
+  return createFileRanges(file).flatMap((range) => range.gap ? [range.gap] : []);
+}
+
+export function sameAddressGap(left: AddressGap | undefined, right: AddressGap | undefined): boolean {
+  return left !== undefined && right !== undefined &&
+    left.fileId === right.fileId && left.start === right.start && left.end === right.end;
+}
+
+type AddressRange = Omit<AddressSpan, "rects" | "visible">;
+
+function createFileRanges(file: ParsedFile): AddressRange[] {
+  const allTensors = file.tensors.flatMap((tensor) =>
     tensorSegments(tensor)
       .map((segment) => ({
         start: maxBigInt(0n, segment.byteOffset),
         end: minBigInt(
-          layout.file.size,
+          file.size,
           segment.byteOffset + segment.byteLength
         )
       }))
       .filter((segment) => segment.end > segment.start)
-      .map<AddressSpan>((segment) => ({
+      .map<AddressRange>((segment) => ({
         ...segment,
         kind: "tensor",
-        visible: includeTensor(tensor),
-        tensor,
-        rects: projectRange(layout, segment.start, segment.end)
+        tensor
       }))
   );
   allTensors.sort((a, b) => compareBigInt(a.start, b.start));
 
   const firstTensorStart = allTensors[0]?.start ?? 0n;
-  const metadata: AddressSpan[] =
+  const metadata: AddressRange[] =
     firstTensorStart > 0n
       ? [
           {
             start: 0n,
             end: firstTensorStart,
-            kind: "metadata",
-            visible: true,
-            rects: projectRange(layout, 0n, firstTensorStart)
+            kind: "metadata"
           }
         ]
       : [];
-  return [...metadata, ...allTensors];
+  const gaps: AddressRange[] = [];
+  let end = firstTensorStart;
+  const addGap = (start: bigint, end: bigint) => {
+    gaps.push({ start, end, kind: "gap", gap: { fileId: file.id, start, end } });
+  };
+  for (const tensor of allTensors) {
+    if (tensor.start > end) addGap(end, tensor.start);
+    end = maxBigInt(end, tensor.end);
+  }
+  if (end < file.size) addGap(end, file.size);
+  return [...metadata, ...allTensors, ...gaps].sort((a, b) => compareBigInt(a.start, b.start));
 }
 
 function tensorSegments(

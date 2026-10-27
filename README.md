@@ -231,8 +231,16 @@ pan. A wheel or two-finger trackpad gesture scrolls the map; trackpad pinch or
 Ctrl/Cmd + wheel zooms around the pointer. A synchronized vertical scrollbar
 supports direct dragging, track clicks, and keyboard navigation. Selecting a
 tensor opens its shape, storage, exact addresses, and value-sampling controls
-in the inspector. The tensor filter includes previous/next controls; Enter and
+in the inspector. The map filter includes previous/next controls; Enter and
 Shift+Enter navigate between matches and reveal them in the map.
+Search `gap` or `bubble` (also `gaps` / `bubbles`, case-insensitively) to
+highlight and navigate the unreferenced ranges between tensor payloads and at
+the end of each file. Matching tensor names still appear alongside gap results.
+Selecting a gap shows its file, exact start/end addresses, and byte length.
+This works in single-model and comparison views; comparison gaps remain
+independent on each side. Filtered tensors and the displayed header/metadata
+prefix are not gaps, and an unreferenced range may still contain padding or
+format metadata rather than empty bytes.
 The Metadata tab exposes file-level model metadata, including searchable GGUF
 KV entries such as architecture, model name, quantization details, and
 tokenizer configuration.
