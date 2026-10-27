@@ -119,7 +119,7 @@
     "@weights-viz/ui": "workspace:*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "vite": "^8.2.2"
+    "vite": "^8.2.4"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
