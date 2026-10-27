@@ -26,7 +26,7 @@ jobs:
       - uses: pnpm/action-setup@v6
         if: ${{ env.HF_TOKEN != '' }}
         with:
-          version: 11.24.0
+          version: 12.14.0
       - uses: actions/setup-node@v7
         if: ${{ env.HF_TOKEN != '' }}
         with:

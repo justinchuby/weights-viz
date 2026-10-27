@@ -154,7 +154,13 @@ Add a write-capable `HF_TOKEN` Actions secret to create and update the Space.
 
 ## Development
 
-Requirements: Node.js 20.19+ or 22.12+ and pnpm 11.
+Requirements: Node.js 22.13+ (22.x), 24.x, or 26+ and pnpm 12.14.0
+(pinned in `package.json`).
+
+Keep pnpm's supply-chain policy checks enabled. The workspace permits
+install-time dependency builds only for `esbuild` and `@vscode/vsce-sign`.
+The lockfile pins package integrity without mirror-specific archive URLs, so
+registry selection can remain local to each environment.
 
 ```sh
 pnpm install
@@ -187,8 +193,19 @@ Create an installable VSIX:
 pnpm package:vscode
 ```
 
+The extension's `@types/vscode` version is pinned to its minimum supported
+VS Code version (`engines.vscode`); update both together when raising that
+minimum. VSIX packaging uses `@vscode/vsce` 4, whose Markdown renderer is
+`marked`, so `markdown-it` is no longer a dependency.
+
+The Hub SDK is pinned to `@huggingface/hub` 2.17.8 because 2.17.9 is not
+available from the approved npm mirror. This is an intentional compatibility
+fallback, not a claim that 2.17.8 is the latest upstream version. Revisit the
+pin when the newer package is available, and run the Hub integration tests
+before changing it.
+
 Pushes to `main` deploy the static app through GitHub Pages. Version tags such
-as `v0.5.3` create a GitHub release containing the VSIX, then dispatch the
+as `v0.5.4` create a GitHub release containing the VSIX, then dispatch the
 Marketplace publishing workflow. A GitHub release published manually triggers
 the same Marketplace workflow.
 
@@ -231,8 +248,16 @@ pan. A wheel or two-finger trackpad gesture scrolls the map; trackpad pinch or
 Ctrl/Cmd + wheel zooms around the pointer. A synchronized vertical scrollbar
 supports direct dragging, track clicks, and keyboard navigation. Selecting a
 tensor opens its shape, storage, exact addresses, and value-sampling controls
-in the inspector. The tensor filter includes previous/next controls; Enter and
+in the inspector. The map filter includes previous/next controls; Enter and
 Shift+Enter navigate between matches and reveal them in the map.
+Search `gap` or `bubble` (also `gaps` / `bubbles`, case-insensitively) to
+highlight and navigate the unreferenced ranges between tensor payloads and at
+the end of each file. Matching tensor names still appear alongside gap results.
+Selecting a gap shows its file, exact start/end addresses, and byte length.
+This works in single-model and comparison views; comparison gaps remain
+independent on each side. Filtered tensors and the displayed header/metadata
+prefix are not gaps, and an unreferenced range may still contain padding or
+format metadata rather than empty bytes.
 The Metadata tab exposes file-level model metadata, including searchable GGUF
 KV entries such as architecture, model name, quantization details, and
 tokenizer configuration.

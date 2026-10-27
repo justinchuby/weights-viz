@@ -50,10 +50,18 @@ import {
   createAddressMapLayout,
   hitTestAddressMap,
   isClickGesture,
+  sameAddressGap,
+  type AddressGap,
   type AddressHit,
   type AddressMapLayout,
   type AddressRect
 } from "./address-map";
+import {
+  findAddressMatches,
+  findComparisonMatches,
+  searchesGaps,
+  tensorMatchesQuery
+} from "./address-search";
 import {
   formatAddress,
   formatBytes,
@@ -97,9 +105,18 @@ interface HoverInfo {
   clientY: number;
 }
 
-interface TensorNavigationTarget {
-  tensor: TensorRecord;
+interface MapNavigationTarget {
+  fileId: string;
+  start: bigint;
   sequence: number;
+}
+
+function tensorNavigationTarget(tensor: TensorRecord, sequence: number): MapNavigationTarget {
+  return {
+    fileId: tensor.fileId,
+    start: tensor.byteSegments?.[0]?.byteOffset ?? tensor.byteOffset,
+    sequence
+  };
 }
 
 const CHOOSER_GRACE_MS = 1200;
@@ -139,6 +156,7 @@ export function WeightsExplorer({
 }: WeightsExplorerProps) {
   const [activeModelId, setActiveModelId] = useState<string>();
   const [selected, setSelected] = useState<TensorRecord>();
+  const [selectedGap, setSelectedGap] = useState<AddressGap>();
   const [sample, setSample] = useState<TensorSample>();
   const [sampleError, setSampleError] = useState<string>();
   const [url, setUrl] = useState(defaultUrl);
@@ -152,8 +170,8 @@ export function WeightsExplorer({
   const [metadataFileId, setMetadataFileId] = useState<string>();
   const [metadataQuery, setMetadataQuery] = useState("");
   const [pickerBlocked, setPickerBlocked] = useState(false);
-  const [tensorNavigation, setTensorNavigation] =
-    useState<TensorNavigationTarget>();
+  const [mapNavigation, setMapNavigation] =
+    useState<MapNavigationTarget>();
   const [comparisonMode, setComparisonMode] = useState(defaultCompare);
   const [rightModelId, setRightModelId] = useState<string>();
   const [dtypeLesson, setDtypeLesson] = useState<{
@@ -163,7 +181,7 @@ export function WeightsExplorer({
   }>();
   const [dtypeAtlasOpen, setDtypeAtlasOpen] = useState(defaultDtypeAtlas);
   const closeDtypeLesson = useCallback(() => setDtypeLesson(undefined), []);
-  const tensorNavigationSequence = useRef(0);
+  const mapNavigationSequence = useRef(0);
   const activeModel =
     models.find((model) => model.id === activeModelId) ?? models[0];
   const metadataFile =
@@ -191,12 +209,13 @@ export function WeightsExplorer({
   useEffect(() => {
     if (!activeModel) return;
     setSelected(undefined);
+    setSelectedGap(undefined);
     setSample(undefined);
     setSampleError(undefined);
     setMetadataFileId(activeModel.files[0]?.id);
     setInspectorMode("metadata");
     setMetadataQuery("");
-    setTensorNavigation(undefined);
+    setMapNavigation(undefined);
   }, [activeModel?.id]);
 
   useEffect(() => {
@@ -214,23 +233,25 @@ export function WeightsExplorer({
     if (models.length === 1) setComparisonMode(false);
   }, [comparisonRight, models.length, rightModelId]);
 
-  const matchingTensors = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!activeModel || !needle) return [];
-    return activeModel.files.flatMap((file) =>
-      file.tensors.filter(
-        (tensor) =>
-          tensor.name.toLowerCase().includes(needle) ||
-          tensor.dtype.toLowerCase().includes(needle)
-      )
-    );
-  }, [activeModel, query]);
-  const selectedMatchIndex = selected
-    ? matchingTensors.indexOf(selected)
-    : -1;
+  const matchingRegions = useMemo(
+    () => activeModel ? findAddressMatches(activeModel, query) : [],
+    [activeModel, query]
+  );
+  const selectedMatchIndex = matchingRegions.findIndex((match) =>
+    match.kind === "tensor" ? match.tensor === selected : sameAddressGap(match.gap, selectedGap)
+  );
 
   const selectTensor = (tensor: TensorRecord) => {
     setSelected(tensor);
+    setSelectedGap(undefined);
+    setInspectorMode("tensor");
+    setSample(undefined);
+    setSampleError(undefined);
+  };
+
+  const selectGap = (gap: AddressGap) => {
+    setSelected(undefined);
+    setSelectedGap(gap);
     setInspectorMode("tensor");
     setSample(undefined);
     setSampleError(undefined);
@@ -248,21 +269,24 @@ export function WeightsExplorer({
     onDtypeAtlasChange?.(open);
   };
 
-  const navigateTensorMatches = (direction: 1 | -1) => {
-    if (matchingTensors.length === 0) return;
+  const navigateMatches = (direction: 1 | -1) => {
+    if (matchingRegions.length === 0) return;
     const nextIndex =
       selectedMatchIndex < 0
         ? direction > 0
           ? 0
-          : matchingTensors.length - 1
-        : (selectedMatchIndex + direction + matchingTensors.length) %
-          matchingTensors.length;
-    const tensor = matchingTensors[nextIndex]!;
-    selectTensor(tensor);
-    setTensorNavigation({
-      tensor,
-      sequence: ++tensorNavigationSequence.current
-    });
+          : matchingRegions.length - 1
+        : (selectedMatchIndex + direction + matchingRegions.length) %
+          matchingRegions.length;
+    const match = matchingRegions[nextIndex]!;
+    const sequence = ++mapNavigationSequence.current;
+    if (match.kind === "tensor") {
+      selectTensor(match.tensor);
+      setMapNavigation(tensorNavigationTarget(match.tensor, sequence));
+    } else {
+      selectGap(match.gap);
+      setMapNavigation({ fileId: match.gap.fileId, start: match.gap.start, sequence });
+    }
   };
 
   const requestSample = async () => {
@@ -597,40 +621,40 @@ export function WeightsExplorer({
                   autoComplete="off"
                   spellCheck={false}
                   className="wv-filter"
-                  aria-label="Filter tensors"
-                  placeholder="Filter tensors by name or dtype…"
+                  aria-label="Filter tensors and gaps"
+                  placeholder="Filter name, dtype, gap or bubble…"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key !== "Enter") return;
                     event.preventDefault();
-                    navigateTensorMatches(event.shiftKey ? -1 : 1);
+                    navigateMatches(event.shiftKey ? -1 : 1);
                   }}
                 />
                 <span
                   className="wv-search-count"
                   aria-live="polite"
-                  title={`${matchingTensors.length} matching tensors`}
+                  title={`${matchingRegions.length} matching regions`}
                 >
                   {query.trim()
-                    ? `${selectedMatchIndex + 1}/${matchingTensors.length}`
+                    ? `${selectedMatchIndex + 1}/${matchingRegions.length}`
                     : "—"}
                 </span>
                 <button
                   type="button"
-                  aria-label="Previous tensor match"
+                  aria-label="Previous match"
                   title="Previous match (Shift+Enter)"
-                  disabled={matchingTensors.length === 0}
-                  onClick={() => navigateTensorMatches(-1)}
+                  disabled={matchingRegions.length === 0}
+                  onClick={() => navigateMatches(-1)}
                 >
                   <ChevronUp className="wv-icon" aria-hidden="true" />
                 </button>
                 <button
                   type="button"
-                  aria-label="Next tensor match"
+                  aria-label="Next match"
                   title="Next match (Enter)"
-                  disabled={matchingTensors.length === 0}
-                  onClick={() => navigateTensorMatches(1)}
+                  disabled={matchingRegions.length === 0}
+                  onClick={() => navigateMatches(1)}
                 >
                   <ChevronDown className="wv-icon" aria-hidden="true" />
                 </button>
@@ -655,10 +679,15 @@ export function WeightsExplorer({
               model={activeModel}
               query={query}
               {...(selected ? { selected } : {})}
-              {...(tensorNavigation ? { navigationTarget: tensorNavigation } : {})}
+              {...(selectedGap ? { selectedGap } : {})}
+              {...(mapNavigation ? { navigationTarget: mapNavigation } : {})}
               onSelect={(tensor) => {
-                setTensorNavigation(undefined);
+                setMapNavigation(undefined);
                 selectTensor(tensor);
+              }}
+              onSelectGap={(gap) => {
+                setMapNavigation(undefined);
+                selectGap(gap);
               }}
             />
           </div>
@@ -711,10 +740,10 @@ export function WeightsExplorer({
               </button>
               <button
                 className={inspectorMode === "tensor" ? "active" : ""}
-                disabled={!selected}
+                disabled={!selected && !selectedGap}
                 onClick={() => setInspectorMode("tensor")}
               >
-                Tensor
+                {selectedGap ? "Gap" : "Tensor"}
               </button>
             </div>
             {inspectorMode === "metadata" && metadataFile ? (
@@ -725,6 +754,8 @@ export function WeightsExplorer({
                 onQueryChange={setMetadataQuery}
                 onFileChange={setMetadataFileId}
               />
+            ) : selectedGap ? (
+              <GapInspector model={activeModel} gap={selectedGap} />
             ) : selected ? (
               <>
                 <button
@@ -859,47 +890,54 @@ function ComparisonWorkspace({
   const [filter, setFilter] = useState<ComparisonFilter>("all");
   const [resolutionStep, setResolutionStep] = useState(0);
   const [selectedPair, setSelectedPair] = useState<TensorComparison>();
-  const [leftNavigation, setLeftNavigation] = useState<TensorNavigationTarget>();
-  const [rightNavigation, setRightNavigation] = useState<TensorNavigationTarget>();
+  const [selectedGap, setSelectedGap] = useState<{ side: "left" | "right"; gap: AddressGap }>();
+  const [leftNavigation, setLeftNavigation] = useState<MapNavigationTarget>();
+  const [rightNavigation, setRightNavigation] = useState<MapNavigationTarget>();
   const navigationSequence = useRef(0);
 
   const indexes = useMemo(() => comparisonIndexes(comparison), [comparison]);
-  const matchingPairs = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return [];
-    return comparison.tensors.filter(
-      (pair) =>
-        pair.name.toLowerCase().includes(needle) ||
-        pair.left?.dtype.toLowerCase().includes(needle) ||
-        pair.right?.dtype.toLowerCase().includes(needle)
-    );
-  }, [comparison, query]);
-  const selectedMatchIndex = selectedPair
-    ? matchingPairs.indexOf(selectedPair)
-    : -1;
+  const matchingRegions = useMemo(
+    () => findComparisonMatches(comparison, left, right, query),
+    [comparison, left, right, query]
+  );
+  const selectedMatchIndex = matchingRegions.findIndex((match) =>
+    match.kind === "tensor" ? match.pair === selectedPair :
+      match.side === selectedGap?.side && sameAddressGap(match.gap, selectedGap.gap)
+  );
   const referenceFileSize = largestFileSize([left, right]);
 
   useEffect(() => {
     setSelectedPair(undefined);
+    setSelectedGap(undefined);
     setLeftNavigation(undefined);
     setRightNavigation(undefined);
   }, [left.id, right.id]);
 
   const selectPair = (pair: TensorComparison) => {
     setSelectedPair(pair);
+    setSelectedGap(undefined);
     const sequence = ++navigationSequence.current;
     setLeftNavigation(
-      pair.left ? { tensor: pair.left, sequence } : undefined
+      pair.left ? tensorNavigationTarget(pair.left, sequence) : undefined
     );
     setRightNavigation(
-      pair.right ? { tensor: pair.right, sequence } : undefined
+      pair.right ? tensorNavigationTarget(pair.right, sequence) : undefined
     );
   };
 
   const clearSelection = () => {
     setSelectedPair(undefined);
+    setSelectedGap(undefined);
     setLeftNavigation(undefined);
     setRightNavigation(undefined);
+  };
+
+  const selectGap = (side: "left" | "right", gap: AddressGap) => {
+    setSelectedPair(undefined);
+    setSelectedGap({ side, gap });
+    const target = { fileId: gap.fileId, start: gap.start, sequence: ++navigationSequence.current };
+    setLeftNavigation(side === "left" ? target : undefined);
+    setRightNavigation(side === "right" ? target : undefined);
   };
 
   const selectTensor = (side: "left" | "right", tensor: TensorRecord) => {
@@ -911,15 +949,17 @@ function ComparisonWorkspace({
   };
 
   const navigateMatches = (direction: 1 | -1) => {
-    if (!matchingPairs.length) return;
+    if (!matchingRegions.length) return;
     const index =
       selectedMatchIndex < 0
         ? direction > 0
           ? 0
-          : matchingPairs.length - 1
-        : (selectedMatchIndex + direction + matchingPairs.length) %
-          matchingPairs.length;
-    selectPair(matchingPairs[index]!);
+          : matchingRegions.length - 1
+        : (selectedMatchIndex + direction + matchingRegions.length) %
+          matchingRegions.length;
+    const match = matchingRegions[index]!;
+    if (match.kind === "tensor") selectPair(match.pair);
+    else selectGap(match.side, match.gap);
   };
 
   return (
@@ -983,8 +1023,8 @@ function ComparisonWorkspace({
             autoComplete="off"
             spellCheck={false}
             className="wv-filter"
-            aria-label="Search compared tensors"
-            placeholder="Search exact tensor names or dtype…"
+            aria-label="Search compared tensors and gaps"
+            placeholder="Search name, dtype, gap or bubble…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
@@ -995,21 +1035,21 @@ function ComparisonWorkspace({
           />
           <span className="wv-search-count">
             {query.trim()
-              ? `${selectedMatchIndex + 1}/${matchingPairs.length}`
+              ? `${selectedMatchIndex + 1}/${matchingRegions.length}`
               : "—"}
           </span>
           <button
             type="button"
-            aria-label="Previous tensor match"
-            disabled={!matchingPairs.length}
+            aria-label="Previous match"
+            disabled={!matchingRegions.length}
             onClick={() => navigateMatches(-1)}
           >
             <ChevronUp className="wv-icon" aria-hidden="true" />
           </button>
           <button
             type="button"
-            aria-label="Next tensor match"
-            disabled={!matchingPairs.length}
+            aria-label="Next match"
+            disabled={!matchingRegions.length}
             onClick={() => navigateMatches(1)}
           >
             <ChevronDown className="wv-icon" aria-hidden="true" />
@@ -1060,6 +1100,7 @@ function ComparisonWorkspace({
           model={left}
           query={query}
           {...(selectedPair?.left ? { selected: selectedPair.left } : {})}
+          {...(selectedGap?.side === "left" ? { selectedGap: selectedGap.gap } : {})}
           {...(leftNavigation ? { navigationTarget: leftNavigation } : {})}
           includeTensor={(tensor) =>
             comparisonStatusVisible(
@@ -1075,12 +1116,14 @@ function ComparisonWorkspace({
             ? { emptyState: "No exact-name counterpart on the left" }
             : {})}
           onSelect={(tensor) => selectTensor("left", tensor)}
+          onSelectGap={(gap) => selectGap("left", gap)}
           onClearSelection={clearSelection}
         />
         <WeightMap
           model={right}
           query={query}
           {...(selectedPair?.right ? { selected: selectedPair.right } : {})}
+          {...(selectedGap?.side === "right" ? { selectedGap: selectedGap.gap } : {})}
           {...(rightNavigation ? { navigationTarget: rightNavigation } : {})}
           includeTensor={(tensor) =>
             comparisonStatusVisible(
@@ -1096,22 +1139,31 @@ function ComparisonWorkspace({
             ? { emptyState: "No exact-name counterpart on the right" }
             : {})}
           onSelect={(tensor) => selectTensor("right", tensor)}
+          onSelectGap={(gap) => selectGap("right", gap)}
           onClearSelection={clearSelection}
         />
-        <ComparisonTensorDetail
+        {selectedGap?.side === "left" ? (
+          <section className="wv-comparison-detail">
+            <GapInspector model={left} gap={selectedGap.gap} compact />
+          </section>
+        ) : <ComparisonTensorDetail
           model={left}
           {...(selectedPair?.left ? { tensor: selectedPair.left } : {})}
           {...(selectedPair ? { pair: selectedPair } : {})}
           missingLabel="Not present on the left"
           onExplainDtype={onExplainDtype}
-        />
-        <ComparisonTensorDetail
+        />}
+        {selectedGap?.side === "right" ? (
+          <section className="wv-comparison-detail">
+            <GapInspector model={right} gap={selectedGap.gap} compact />
+          </section>
+        ) : <ComparisonTensorDetail
           model={right}
           {...(selectedPair?.right ? { tensor: selectedPair.right } : {})}
           {...(selectedPair ? { pair: selectedPair } : {})}
           missingLabel="Not present on the right"
           onExplainDtype={onExplainDtype}
-        />
+        />}
       </div>
     </section>
   );
@@ -1334,10 +1386,44 @@ function DiffSummaryButton({
   );
 }
 
+function GapInspector({ model, gap, compact = false }: {
+  model: ParsedModel;
+  gap: AddressGap;
+  compact?: boolean;
+}) {
+  const file = model.files.find((candidate) => candidate.id === gap.fileId);
+  if (compact) {
+    return (
+      <>
+        <div><span>Gap</span><b>Unmapped / alignment gap</b></div>
+        <small>{file?.name} · {formatBytes(gap.end - gap.start)}</small>
+        <code>{formatAddress(gap.start)} → {formatAddress(gap.end)}</code>
+      </>
+    );
+  }
+  return (
+    <>
+      <span className="wv-tensor-type">Gap</span>
+      <h2>Unmapped / alignment gap</h2>
+      <dl>
+        <Detail label="File" value={file?.name ?? gap.fileId} />
+        <Detail label="Size" value={formatBytes(gap.end - gap.start)} />
+        <Detail label="Start" value={formatAddress(gap.start)} mono />
+        <Detail label="End" value={formatAddress(gap.end)} mono />
+      </dl>
+      <div className="wv-alert">
+        This range is not referenced by a tensor payload. It may contain alignment
+        padding or format metadata; its bytes are not necessarily empty or zero.
+      </div>
+    </>
+  );
+}
+
 function WeightMap({
   model,
   query,
   selected,
+  selectedGap,
   navigationTarget,
   includeTensor,
   diffStatuses,
@@ -1346,12 +1432,14 @@ function WeightMap({
   onResolutionStepChange,
   emptyState,
   onSelect,
+  onSelectGap,
   onClearSelection
 }: {
   model: ParsedModel;
   query: string;
   selected?: TensorRecord;
-  navigationTarget?: TensorNavigationTarget;
+  selectedGap?: AddressGap;
+  navigationTarget?: MapNavigationTarget;
   includeTensor?: (tensor: TensorRecord) => boolean;
   diffStatuses?: Map<string, TensorComparisonStatus>;
   referenceFileSize?: bigint;
@@ -1359,6 +1447,7 @@ function WeightMap({
   onResolutionStepChange?: (step: number) => void;
   emptyState?: string;
   onSelect: (tensor: TensorRecord) => void;
+  onSelectGap: (gap: AddressGap) => void;
   onClearSelection?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1385,18 +1474,13 @@ function WeightMap({
   const themeRevision = useThemeRevision();
   const layout = useMemo(
     () => {
-      const needle = query.trim().toLowerCase();
       return createAddressMapLayout(
         model,
         size.width,
-        needle
-          ? (tensor) =>
-              (tensor.name.toLowerCase().includes(needle) ||
-                tensor.dtype.toLowerCase().includes(needle)) &&
-              (includeTensor?.(tensor) ?? true)
-          : includeTensor,
+        (tensor) => tensorMatchesQuery(tensor, query) && (includeTensor?.(tensor) ?? true),
         resolutionStep,
-        referenceFileSize
+        referenceFileSize,
+        searchesGaps(query)
       );
     },
     [includeTensor, model, query, referenceFileSize, resolutionStep, size.width]
@@ -1431,13 +1515,10 @@ function WeightMap({
   useEffect(() => {
     if (!navigationTarget) return;
     const fileLayout = layout.files.find(
-      (candidate) => candidate.file.id === navigationTarget.tensor.fileId
+      (candidate) => candidate.file.id === navigationTarget.fileId
     );
     const rect = fileLayout?.spans.find(
-      (span) =>
-        span.tensor === navigationTarget.tensor ||
-        (span.tensor?.id === navigationTarget.tensor.id &&
-          span.tensor.fileId === navigationTarget.tensor.fileId)
+      (span) => span.start === navigationTarget.start
     )?.rects[0];
     if (!rect) return;
     setOffset(
@@ -1474,6 +1555,7 @@ function WeightMap({
       context,
       layout,
       selected,
+      selectedGap,
       diffStatuses,
       zoom,
       offset,
@@ -1483,7 +1565,7 @@ function WeightMap({
     );
     context.restore();
     drawAddressRulerBackground(context, size, theme, ratio);
-  }, [diffStatuses, layout, offset, selected, size, themeRevision, zoom]);
+  }, [diffStatuses, layout, offset, selected, selectedGap, size, themeRevision, zoom]);
 
   const hitTest = (clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -1632,7 +1714,9 @@ function WeightMap({
           if (!drag.moved) {
             const hit = hitTest(event.clientX, event.clientY);
             if (hit?.kind === "tensor" && hit.tensor) onSelect(hit.tensor);
-            else onClearSelection?.();
+            else if (hit?.kind === "unmapped") {
+              onSelectGap({ fileId: hit.file.id, start: hit.start, end: hit.end });
+            } else onClearSelection?.();
           }
           dragRef.current = undefined;
           setDragging(false);
@@ -1767,7 +1851,7 @@ function WeightMap({
             <>
               <b>Unmapped / alignment gap</b>
               <span>{hover.hit.file.name}</span>
-              <span>Padding: {formatBytes(hover.hit.end - hover.hit.start)}</span>
+              <span>Unreferenced: {formatBytes(hover.hit.end - hover.hit.start)}</span>
               {formattedAlignment(hover.hit.file) && (
                 <span>
                   Declared {hover.hit.file.format.toUpperCase()} alignment:{" "}
@@ -1912,6 +1996,7 @@ function drawAddressMap(
   context: CanvasRenderingContext2D,
   layout: AddressMapLayout,
   selected: TensorRecord | undefined,
+  selectedGap: AddressGap | undefined,
   diffStatuses: Map<string, TensorComparisonStatus> | undefined,
   zoom: number,
   offset: { x: number; y: number },
@@ -1943,20 +2028,46 @@ function drawAddressMap(
       const color =
         span.kind === "metadata"
           ? theme.metadata
-          : colorForTensor(span.tensor!);
+          : span.kind === "gap"
+            ? theme.accent
+            : colorForTensor(span.tensor!);
       context.fillStyle = color;
       context.globalAlpha =
         span.kind === "metadata"
           ? 0.92
-          : diffStatus === "unchanged"
-            ? 0.38
-            : 0.9;
+          : span.kind === "gap"
+            ? 0.2
+            : diffStatus === "unchanged"
+              ? 0.38
+              : 0.9;
       for (const rect of span.rects) {
         if (!isVisible(rect, visibleTop, visibleBottom)) continue;
         context.fillRect(rect.x, rect.y, rect.width, rect.height);
       }
     }
     context.globalAlpha = 1;
+
+    for (const span of fileLayout.spans) {
+      if (span.kind !== "gap" || !span.visible) continue;
+      const rect = span.rects.find((candidate) =>
+        isVisible(candidate, visibleTop, visibleBottom) &&
+        candidate.width * zoom >= 64 && candidate.height * zoom >= 10
+      );
+      if (!rect) continue;
+      context.save();
+      context.beginPath();
+      context.rect(rect.x, rect.y, rect.width, rect.height);
+      context.clip();
+      context.fillStyle = theme.labelText;
+      context.font = `600 ${11 / zoom}px "SF Mono", Menlo, Monaco, Consolas, monospace`;
+      context.textBaseline = "middle";
+      context.fillText(
+        fitCanvasText(context, `Gap · ${formatBytes(span.end - span.start)}`, rect.width - 8 / zoom),
+        rect.x + 4 / zoom,
+        rect.y + rect.height / 2
+      );
+      context.restore();
+    }
 
     context.strokeStyle = theme.accent;
     context.globalAlpha = 0.28;
@@ -2030,7 +2141,9 @@ function drawAddressMap(
     }
 
     const selectedSpan = fileLayout.spans.find(
-      (span) => span.visible && span.tensor?.id === selected?.id
+      (span) =>
+        (span.tensor !== undefined && span.visible && span.tensor.id === selected?.id) ||
+        sameAddressGap(span.gap, selectedGap)
     );
     if (selectedSpan) {
       context.strokeStyle = theme.selection;
