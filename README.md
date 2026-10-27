@@ -159,6 +159,8 @@ Requirements: Node.js 22.13+ (22.x), 24.x, or 26+ and pnpm 12.14.0
 
 Keep pnpm's supply-chain policy checks enabled. The workspace permits
 install-time dependency builds only for `esbuild` and `@vscode/vsce-sign`.
+The lockfile pins package integrity without mirror-specific archive URLs, so
+registry selection can remain local to each environment.
 
 ```sh
 pnpm install
