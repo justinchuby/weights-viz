@@ -154,7 +154,8 @@ Add a write-capable `HF_TOKEN` Actions secret to create and update the Space.
 
 ## Development
 
-Requirements: Node.js 20.19+ or 22.12+ and pnpm 11.
+Requirements: Node.js 22.13+ (22.x), 24.x, or 26+ and pnpm 11.24.0
+(pinned in `package.json`).
 
 ```sh
 pnpm install
@@ -186,6 +187,17 @@ Create an installable VSIX:
 ```sh
 pnpm package:vscode
 ```
+
+The extension's `@types/vscode` version is pinned to its minimum supported
+VS Code version (`engines.vscode`); update both together when raising that
+minimum. VSIX packaging uses `@vscode/vsce` 4, whose Markdown renderer is
+`marked`, so `markdown-it` is no longer a dependency.
+
+The Hub SDK is pinned to `@huggingface/hub` 2.17.8 because 2.17.9 is not
+available from the approved npm mirror. This is an intentional compatibility
+fallback, not a claim that 2.17.8 is the latest upstream version. Revisit the
+pin when the newer package is available, and run the Hub integration tests
+before changing it.
 
 Pushes to `main` deploy the static app through GitHub Pages. Version tags such
 as `v0.5.3` create a GitHub release containing the VSIX, then dispatch the
