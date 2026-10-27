@@ -25,6 +25,8 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: pnpm package:vscode
+      - name: Verify frozen lockfile unchanged
+        run: git diff --exit-code -- pnpm-lock.yaml
       - uses: actions/upload-artifact@v7
         with:
           name: weights-viz-vsix

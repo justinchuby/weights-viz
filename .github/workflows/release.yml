@@ -24,6 +24,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm package:vscode
+      - name: Verify frozen lockfile unchanged
+        run: git diff --exit-code -- pnpm-lock.yaml
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

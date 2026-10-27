@@ -161,6 +161,10 @@ Keep pnpm's supply-chain policy checks enabled. The workspace permits
 install-time dependency builds only for `esbuild` and `@vscode/vsce-sign`.
 The lockfile pins package integrity without mirror-specific archive URLs, so
 registry selection can remain local to each environment.
+Both npm and standalone pnpm bootstrap packages are locked; CI, deployment,
+and publication fail if their commands unexpectedly change the lockfile.
+For an explicit pinned invocation, use
+`npm exec --yes --package=pnpm@12.14.0 -- pnpm <command>`.
 
 ```sh
 pnpm install

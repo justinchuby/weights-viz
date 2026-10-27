@@ -66,6 +66,8 @@ jobs:
           else
             pnpm package:vscode
           fi
+      - name: Verify frozen lockfile unchanged
+        run: git diff --exit-code -- pnpm-lock.yaml
       - name: Publish extension
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
