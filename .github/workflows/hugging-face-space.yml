@@ -36,6 +36,9 @@ jobs:
         run: pnpm install --frozen-lockfile
       - if: ${{ env.HF_TOKEN != '' }}
         run: pnpm --filter @weights-viz/web build
+      - name: Verify frozen lockfile unchanged
+        if: ${{ env.HF_TOKEN != '' }}
+        run: git diff --exit-code -- pnpm-lock.yaml
       - name: Create Space if needed
         if: ${{ env.HF_TOKEN != '' }}
         run: |
